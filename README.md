@@ -39,6 +39,14 @@ identity, delegates, signed refs).
   quads in the same `db` (`set-ref`/`get-ref`/`list-refs`) — the mutable-
   pointer-over-immutable-DAG pattern Datomic itself uses for its own
   indexes.
+- **`kotoba-git.ref-policy`** — `fast-forward?` and `set-ref-ff-only!`:
+  whether moving a ref from one commit to another is a fast-forward (the
+  old target is nil, equal to the new one, or one of its ancestors in the
+  commit DAG — computed via `kotoba-git.log/ancestors`), and a variant of
+  `set-ref` that throws (leaving the ref untouched) rather than silently
+  allowing a non-fast-forward move. This is *shape* policy (is this
+  update a rewind/diverge?), independent of and composable with
+  `kotoba-rad`'s *identity* policy (who signed off on it).
 
 ## What this deliberately is NOT (yet)
 
@@ -51,11 +59,14 @@ identity, delegates, signed refs).
   diff a sync protocol needs, but nothing here speaks to `kotoba-lang/p2p`
   directly (that repo's own `deps.edn` currently points at a renamed-away
   `commit-dag` coordinate and needs a patch first).
-- **No push authorization.** Deciding whether a ref update is allowed is
-  `kotoba-rad`'s job (`kotoba-rad.push-gate/authorize-push?`) — verified
-  end-to-end in an integration script (see the ADR's Verification
-  addendum), but `kotoba-git.refs/set-ref` itself enforces nothing; the
-  caller must invoke the gate first.
+- **No push authorization.** Deciding whether a ref update is allowed *by
+  identity* is `kotoba-rad`'s job (`kotoba-rad.push-gate/authorize-push?`)
+  — verified end-to-end in an integration script (see the ADR's
+  Verification addendum), but `kotoba-git.refs/set-ref` itself enforces
+  nothing; the caller must invoke the gate first. (`kotoba-git.ref-policy`
+  now covers the *shape* half — fast-forward-only — but composing both
+  checks before a real ref update is still the caller's responsibility;
+  no single function does both yet.)
 - **No recursive/fixpoint Datalog for history walks.** `arrangement.datalog`
   is a conjunctive-join query layer, not (yet) a transitive-closure one
   (ADR-2607022600 flags "Datalog fixpoint" as a follow-up) — `ancestors`/
