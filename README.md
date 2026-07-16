@@ -1,6 +1,6 @@
 # bonsai
 
-*(旧 kotoba-git — 2026-07-16 rename。盆栽＝人が木を意図的に仕立てる craft ＝ object DAG を操る道具。namespaces は互換のため kotoba-git.* を維持)*
+*(旧 kotoba-git — 2026-07-16 rename。盆栽＝人が木を意図的に仕立てる craft ＝ object DAG を操る道具。namespaces も bonsai.* に移行済み (2026-07-16))*
 
 A content-addressed git object model (blob/tree/commit) and mutable ref
 store, represented as **native `arrangement` (Datomic-shaped) datoms** —

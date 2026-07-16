@@ -1,4 +1,4 @@
-(ns kotoba-git.object
+(ns bonsai.object
   "Content-addressed blob/tree/commit object model — the git-equivalent
    layer — represented as native arrangement (Datomic-shaped) datoms
    rather than a separate content-addressed block store. A blob/tree/
@@ -6,7 +6,7 @@
    contribute only their pure canonical-encoding/hashing functions
    (cidv1-raw, encode, cid) to derive that identity — nothing is
    persisted through them. Persisting a repo's whole datom set (objects
-   and refs together) to durable storage is kotoba-git.repo/persist!'s
+   and refs together) to durable storage is bonsai.repo/persist!'s
    job, the same arrangement.core/commit! path every other domain in this
    ecosystem uses."
   (:require [multiformats.core :as mf]

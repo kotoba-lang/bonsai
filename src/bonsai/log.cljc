@@ -1,9 +1,9 @@
-(ns kotoba-git.log
+(ns bonsai.log
   "History walking over the commit DAG: reachability, first-parent log, and
    the missing-object negotiation a push/pull/pack exchange needs. Reads
-   commits/trees straight out of the repo's arrangement db (kotoba-git.object)."
+   commits/trees straight out of the repo's arrangement db (bonsai.object)."
   (:refer-clojure :exclude [ancestors])
-  (:require [kotoba-git.object :as obj]))
+  (:require [bonsai.object :as obj]))
 
 (defn ancestors
   "Set of every commit CID reachable from head-cid (inclusive), following

@@ -1,4 +1,4 @@
-(ns kotoba-git.conformance-test
+(ns bonsai.conformance-test
   "Golden CID vectors — the exact strings these inputs MUST content-address
    to, on every runtime, forever.
 
@@ -16,8 +16,8 @@
    content addressing — that is a migration event for every stored CID, not
    a value to re-snapshot."
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba-git.object :as obj]
-            [kotoba-git.repo :as repo]
+            [bonsai.object :as obj]
+            [bonsai.repo :as repo]
             [multiformats.core :as mf]))
 
 (defn- utf8 [s]

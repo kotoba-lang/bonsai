@@ -1,9 +1,9 @@
-(ns kotoba-git.repo-test
+(ns bonsai.repo-test
   (:require #?(:clj [clojure.test :refer [deftest is]]
                :cljs [cljs.test :refer [deftest is async] :include-macros true])
-            [kotoba-git.object :as obj]
-            [kotoba-git.refs :as refs]
-            [kotoba-git.repo :as repo]))
+            [bonsai.object :as obj]
+            [bonsai.refs :as refs]
+            [bonsai.repo :as repo]))
 
 (defn- utf8-bytes [s]
   #?(:clj (.getBytes ^String s "UTF-8")

@@ -1,8 +1,8 @@
-(ns kotoba-git.log-test
+(ns bonsai.log-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba-git.object :as obj]
-            [kotoba-git.repo :as repo]
-            [kotoba-git.log :as log]))
+            [bonsai.object :as obj]
+            [bonsai.repo :as repo]
+            [bonsai.log :as log]))
 
 (defn- utf8-bytes [s]
   #?(:clj (.getBytes ^String s "UTF-8")

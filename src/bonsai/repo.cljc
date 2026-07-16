@@ -1,6 +1,6 @@
-(ns kotoba-git.repo
+(ns bonsai.repo
   "A repo is a single arrangement db holding both objects
-   (kotoba-git.object) and refs (kotoba-git.refs) as quads — git is not a
+   (bonsai.object) and refs (bonsai.refs) as quads — git is not a
    separate content-addressed store bolted onto the Datomic-shaped
    kotobase-peer stack, it is a schema within it. Object subjects are
    content hashes (blob/tree/commit CIDs); ref subjects are repo ids —

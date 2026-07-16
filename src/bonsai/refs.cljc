@@ -1,8 +1,8 @@
-(ns kotoba-git.refs
+(ns bonsai.refs
   "Mutable ref/branch pointers (e.g. \"refs/heads/main\" -> commit CID) as
    quads in an arrangement db — the mutable-pointer-over-immutable-content-
    addressed-DAG pattern, same shape Datomic uses for its own indexes.
-   Shares its db with kotoba-git.object (see kotoba-git.repo) — a repo is
+   Shares its db with bonsai.object (see bonsai.repo) — a repo is
    one arrangement db holding both objects and refs."
   (:require [arrangement.core :as arr]
             [arrangement.query :as q]

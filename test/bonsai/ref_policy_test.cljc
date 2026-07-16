@@ -1,9 +1,9 @@
-(ns kotoba-git.ref-policy-test
+(ns bonsai.ref-policy-test
   (:require [clojure.test :refer [deftest is testing]]
-            [kotoba-git.object :as obj]
-            [kotoba-git.repo :as repo]
-            [kotoba-git.refs :as refs]
-            [kotoba-git.ref-policy :as policy]))
+            [bonsai.object :as obj]
+            [bonsai.repo :as repo]
+            [bonsai.refs :as refs]
+            [bonsai.ref-policy :as policy]))
 
 (defn- linear-history [db0]
   (let [[db1 tree0] (obj/write-tree db0 [])

@@ -1,8 +1,8 @@
-(ns kotoba-git.refs-test
+(ns bonsai.refs-test
   (:require [clojure.test :refer [deftest is]]
             [multiformats.core :as mf]
-            [kotoba-git.repo :as repo]
-            [kotoba-git.refs :as refs]))
+            [bonsai.repo :as repo]
+            [bonsai.refs :as refs]))
 
 (defn- utf8-bytes [s]
   #?(:clj (.getBytes ^String s "UTF-8")
