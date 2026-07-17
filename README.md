@@ -85,12 +85,11 @@ identity, delegates, signed refs).
   (ADR-2607022600 flags "Datalog fixpoint" as a follow-up) — `ancestors`/
   `log`/`missing-since` still walk the DAG by hand rather than expressing
   reachability as one Datalog query.
-- **No restore-from-persisted-snapshot.** `repo/persist!` writes a snapshot
-  CID via `arrangement.core/commit!`; `arrangement` does not yet expose a
-  public "rehydrate a db from a snapshot CID" counterpart (that logic
-  lives inside `kotobase-peer`'s own `fold!`/`cold-datoms`, not as a
-  standalone reusable API). Until it does, keep the live `db` value around
-  yourself between restarts.
+- **Snapshot restore is identity-encryption only.** `repo/load` rehydrates the
+  full repo from a `repo/persist!` CID by scanning the persisted SPO index and
+  rebuilding all covering indexes. This repo deliberately uses identity
+  blind/encryption functions; encrypted application stores need their own
+  decrypt-aware hydration boundary.
 
 ## Usage
 

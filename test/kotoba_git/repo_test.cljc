@@ -29,7 +29,8 @@
         [db2 commit-cid] (obj/write-commit db1 {:tree blob-cid :parents [] :author "a"
                                                   :message "m" :ts 1})
         db (refs/set-ref db2 "repo1" "refs/heads/main" commit-cid)]
-    {:put! put! :db db}))
+    {:put! put! :get-fn #(get @store %) :db db
+     :blob-cid blob-cid :commit-cid commit-cid}))
 
 ;; arrangement.core/commit! (which repo/persist! wraps) returns the snapshot
 ;; CID directly on JVM, but a js/Promise of it on cljs (Web Crypto's AEAD/
@@ -41,9 +42,16 @@
 ;; test suite's convention for the same platform split.
 #?(:clj
    (deftest persist-returns-a-snapshot-cid-of-the-whole-repo
-     (let [{:keys [put! db]} (persist-fixture)
+     (let [{:keys [put! get-fn db blob-cid commit-cid]} (persist-fixture)
            snapshot-cid (repo/persist! put! db nil)]
-       (is (string? snapshot-cid))))
+       (is (string? snapshot-cid))
+       (let [loaded (repo/load get-fn snapshot-cid)]
+         (is (= (vec (obj/read-blob db blob-cid))
+                (vec (obj/read-blob loaded blob-cid))))
+         (is (= (obj/read-commit db commit-cid)
+                (obj/read-commit loaded commit-cid)))
+         (is (= (refs/get-ref db "repo1" "refs/heads/main")
+                (refs/get-ref loaded "repo1" "refs/heads/main"))))))
 
    :cljs
    (deftest persist-returns-a-snapshot-cid-of-the-whole-repo
