@@ -1,0 +1,35 @@
+#!/usr/bin/env bb
+(ns kotoba-git-reference-adapter
+  "Filesystem reference implementation of the network adapter contract.
+   KOTOBA_GIT_REFERENCE_ROOT maps kotoba://host/path to a bare repo under that
+   root. Production adapters replace copy/clone with CID hydration and signed
+   ref-event admission."
+  (:require [babashka.process :as process]
+            [clojure.java.io :as io]
+            [clojure.string :as str]))
+
+(defn fail! [m] (binding [*out* *err*] (println m)) (System/exit 1))
+(defn run! [argv]
+  (let [r @(process/process argv {:in :inherit :out :inherit :err :inherit})]
+    (when-not (zero? (:exit r)) (System/exit (:exit r)))))
+
+(let [[operation remote cache] *command-line-args*
+      root (System/getenv "KOTOBA_GIT_REFERENCE_ROOT")]
+  (when-not (and root (.isAbsolute (io/file root)))
+    (fail! "KOTOBA_GIT_REFERENCE_ROOT must be absolute"))
+  (when-not (str/starts-with? remote "kotoba://")
+    (fail! "reference adapter accepts kotoba:// URLs only"))
+  (let [relative (subs remote (count "kotoba://"))]
+    (when (or (str/blank? relative) (str/includes? relative "..")
+              (str/includes? relative "\\") (str/includes? relative "\u0000"))
+      (fail! "unsafe reference remote path"))
+    (let [source (io/file root (str relative ".git"))]
+      (case operation
+        "fetch" (do
+                  (when-not (.exists source) (run! ["git" "init" "--bare" (.getPath source)]))
+                  (if (.exists (io/file cache "HEAD"))
+                    (run! ["git" "--git-dir" cache "fetch" "--prune" (.getPath source)
+                           "+refs/*:refs/*"])
+                    (run! ["git" "clone" "--mirror" (.getPath source) cache])))
+        "push" (run! ["git" "--git-dir" cache "push" "--mirror" (.getPath source)])
+        (fail! (str "unsupported adapter operation: " operation))))))

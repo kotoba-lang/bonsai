@@ -1,0 +1,56 @@
+(ns bonsai.git-codec-test
+  (:require #?(:clj [clojure.java.shell :as shell])
+            [bonsai.git-codec :as codec]
+            [bonsai.git-object :as object]
+            [clojure.test :refer [deftest is testing]]))
+
+(def blob-oid "ce013625030ba8dba906f756967f9e9ca394464a")
+(def empty-tree-oid "4b825dc642cb6eb9a060e54bf8d69288fbee4904")
+
+(deftest typed-tree-roundtrip
+  (let [entries [{:mode "40000" :name "src" :oid empty-tree-oid}
+                 {:mode "100644" :name "README.md" :oid blob-oid}]
+        body (codec/encode-tree (reverse entries))]
+    (testing "canonical tree ordering is stable on both hosts"
+      (is (= [(second entries) (first entries)] (codec/decode-tree body))))
+    (is (= "tree" (:type (object/parse-frame (object/frame "tree" body)))))))
+
+(deftest typed-commit-roundtrip
+  (let [commit {:tree empty-tree-oid
+                :parents ["e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"]
+                :author "Alice <alice@example.test> 1700000000 +0900"
+                :committer "Alice <alice@example.test> 1700000001 +0900"
+                :encoding "UTF-8"
+                :extra-headers [["x-kotoba" "one\ntwo"]]
+                :message "subject\n\nbody\n"}
+        decoded (codec/decode-commit (codec/encode-commit commit))]
+    (is (= commit decoded))))
+
+#?(:clj
+   (deftest typed-bodies-conform-to-git
+     (testing "tree body and git mktree produce the same OID"
+       (let [body (codec/encode-tree [{:mode "100644" :name "hello.txt" :oid blob-oid}])
+             ours (object/object-oid "tree" body)
+             dir (.toFile (java.nio.file.Files/createTempDirectory
+                           "bonsai-tree-" (make-array java.nio.file.attribute.FileAttribute 0)))]
+         (try
+           (is (zero? (:exit (shell/sh "git" "init" "--bare" (.getPath dir)))))
+           (let [{:keys [exit out err]}
+                 (shell/sh "git" (str "--git-dir=" (.getPath dir)) "mktree" "--missing"
+                           :in (str "100644 blob " blob-oid "\thello.txt\n"))]
+             (is (zero? exit) err)
+             (is (= (.trim ^String out) ours)))
+           (finally
+             (doseq [f (reverse (file-seq dir))] (.delete ^java.io.File f))))))
+     (testing "git hash-object accepts the exact typed commit body"
+       (let [body (codec/encode-commit
+                   {:tree empty-tree-oid :parents []
+                    :author "Alice <alice@example.test> 1700000000 +0900"
+                    :committer "Alice <alice@example.test> 1700000000 +0900"
+                    :message "initial\n"})
+             ours (object/object-oid "commit" body)
+             {:keys [exit out err]} (shell/sh "git" "hash-object" "-t" "commit" "--stdin"
+                                                   :in (String. ^bytes body
+                                                                java.nio.charset.StandardCharsets/UTF_8))]
+         (is (zero? exit) err)
+         (is (= (.trim ^String out) ours))))))

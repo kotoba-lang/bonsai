@@ -1,0 +1,91 @@
+#!/usr/bin/env bb
+(ns kotobase-http-git-adapter
+  "HTTPS production adapter for git-remote-kotoba.
+
+   Wire contract:
+     GET /git/v1/repos/<rid>/bundle
+     PUT /git/v1/repos/<rid>/bundle
+
+   PUT body is a Git bundle. Headers bind its SHA-256 and the complete ref
+   projection. The service must verify the bundle closure and authorize/ref-
+   event the update before acknowledging it."
+  (:require [babashka.process :as process]
+            [clojure.java.io :as io]
+            [clojure.string :as str])
+  (:import (java.net URI URLEncoder)
+           (java.security MessageDigest)
+           (java.util Base64)))
+
+(defn fail! [m] (binding [*out* *err*] (println (str "kotobase-http-git-adapter: " m)))
+  (System/exit 1))
+(defn hex [b] (apply str (map #(format "%02x" (bit-and (int %) 0xff)) b)))
+(defn sha256-file [f]
+  (with-open [in (io/input-stream f)]
+    (let [d (MessageDigest/getInstance "SHA-256") buf (byte-array 65536)]
+      (loop [] (let [n (.read in buf)] (when (pos? n) (.update d buf 0 n) (recur))))
+      (hex (.digest d)))))
+(defn run! [argv & [{:keys [in out] :or {out :inherit}}]]
+  (let [r @(process/process argv {:in (or in :inherit) :out out :err :inherit})]
+    (when-not (zero? (:exit r)) (throw (ex-info "command failed" {:argv (first argv) :exit (:exit r)})))
+    r))
+(defn auth-config []
+  (let [auth (System/getenv "KOTOBA_GIT_AUTHORIZATION")]
+    (when-not (and auth (not (str/blank? auth))
+                   (not (re-find #"[\r\n\"]" auth)))
+      (fail! "KOTOBA_GIT_AUTHORIZATION is required and must be one safe header value"))
+    ;; Header travels through curl stdin, not argv/process listings.
+    (str "header = \"Authorization: " auth "\"\n")))
+(defn endpoint [remote]
+  (let [u (URI. remote)]
+    (when-not (= "kotoba" (.getScheme u)) (fail! "remote must use kotoba://"))
+    (let [host (.getHost u) port (.getPort u)
+          rid (str/replace-first (or (.getPath u) "") #"^/" "")
+          loopback? (contains? #{"127.0.0.1" "localhost"} host)
+          http-test? (and loopback? (= "1" (System/getenv "KOTOBA_GIT_ALLOW_HTTP_LOOPBACK")))
+          scheme (if http-test? "http" "https")]
+      (when-not (and host (re-matches #"[A-Za-z0-9.-]+" host)
+                     (not (str/blank? rid)) (not (str/includes? rid "..")))
+        (fail! "unsafe kotoba remote"))
+      (str scheme "://" host (when (pos? port) (str ":" port)) "/git/v1/repos/"
+           (URLEncoder/encode rid "UTF-8") "/bundle"))))
+(defn refs-edn [git-dir]
+  (:out (run! ["git" "--git-dir" git-dir "for-each-ref"
+               "--format=%(refname) %(objectname)"] {:out :string})))
+
+(let [[operation remote cache] *command-line-args*
+      url (endpoint remote)
+      temp (.toFile (java.nio.file.Files/createTempFile
+                     "kotobase-git-" ".bundle"
+                     (make-array java.nio.file.attribute.FileAttribute 0)))]
+  (try
+    (case operation
+      "fetch"
+      (let [r @(process/process ["curl" "--config" "-" "--silent" "--show-error"
+                                 "--output" (.getPath temp) "--write-out" "%{http_code}" url]
+                                {:in (auth-config) :out :string :err :inherit})
+            status (str/trim (:out r))]
+        (cond
+          (= status "404") (when-not (.exists (io/file cache "HEAD"))
+                             (run! ["git" "init" "--bare" cache]))
+          (and (zero? (:exit r)) (= status "200"))
+          (if (.exists (io/file cache "HEAD"))
+            (run! ["git" "--git-dir" cache "fetch" "--prune" (.getPath temp)
+                   "+refs/*:refs/*"])
+            (run! ["git" "clone" "--mirror" (.getPath temp) cache]))
+          :else (fail! (str "bundle fetch failed HTTP " status))))
+
+      "push"
+      (do
+        (run! ["git" "--git-dir" cache "bundle" "create" (.getPath temp) "--all"])
+        (let [refs-b64 (.encodeToString (Base64/getUrlEncoder)
+                                        (.getBytes ^String (refs-edn cache) "UTF-8"))
+              config (str (auth-config)
+                          "header = \"Content-Type: application/x-git-bundle\"\n"
+                          "header = \"X-Kotoba-Bundle-SHA256: " (sha256-file temp) "\"\n"
+                          "header = \"X-Kotoba-Refs-EDN-B64: " refs-b64 "\"\n")]
+          (run! ["curl" "--config" "-" "--fail-with-body" "--silent" "--show-error"
+                 "--request" "PUT" "--upload-file" (.getPath temp) url]
+                {:in config})))
+      (fail! (str "unsupported operation: " operation)))
+    (catch Exception e (fail! (.getMessage e)))
+    (finally (.delete temp))))

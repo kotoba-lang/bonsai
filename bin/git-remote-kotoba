@@ -1,0 +1,53 @@
+#!/usr/bin/env bb
+(ns git-remote-kotoba
+  "Git remote-helper transport bridge.
+
+   URL forms:
+     kotoba::/absolute/path/to/repo.git
+     kotoba:///absolute/path/to/repo.git
+
+   This first transport adapter speaks Git's `connect` capability and hands
+   the byte stream to upload-pack/receive-pack. The repository path may be a
+   local mount or a kotobase-managed materialized bare repo. Signed peer-ref
+   admission remains an application boundary; this helper never invents
+   authority from filesystem possession."
+  (:require [clojure.java.io :as io]
+            [clojure.string :as str]))
+
+;; Git runs helpers with the caller repository as cwd, so deps.edn-relative
+;; classpath discovery is not reliable. Load the implementation relative to
+;; this executable; installed copies must preserve bin/../src.
+(load-file (.getCanonicalPath
+            (io/file (.getParentFile (io/file *file*)) "../src/bonsai/remote_helper.clj")))
+(def helper-connect! (requiring-resolve 'bonsai.remote-helper/connect!))
+(def helper-prepare! (requiring-resolve 'bonsai.remote-helper/prepare!))
+
+(defn fail! [message]
+  (binding [*out* *err*] (println (str "git-remote-kotoba: " message)))
+  (System/exit 1))
+
+(defn connect! [service url]
+  (try
+    (let [opts {:cache-root (System/getenv "KOTOBA_GIT_CACHE")
+                :adapter (System/getenv "KOTOBA_GIT_ADAPTER")}
+          path (helper-prepare! url opts)]
+      ;; Materialization must finish before accepting connect. From this empty
+      ;; response onward stdout/stdin are exclusively the Git byte stream.
+      (println)
+      (flush)
+      (System/exit (helper-connect! service url (assoc opts :prepared-path path))))
+    (catch Exception e (fail! (.getMessage e)))))
+
+(let [[_remote-name url] *command-line-args*
+      reader (java.io.BufferedReader. (java.io.InputStreamReader. System/in))]
+  (loop []
+    (when-let [line (.readLine reader)]
+      (cond
+        (= line "capabilities")
+        (do (println "connect") (println) (flush) (recur))
+
+        (str/starts-with? line "connect ")
+        (connect! (subs line (count "connect ")) url)
+
+        (= line "") (System/exit 0)
+        :else (fail! (str "unsupported command: " line))))))
