@@ -6,6 +6,7 @@
    one arrangement db holding both objects and refs."
   (:require [arrangement.core :as arr]
             [arrangement.query :as q]
+            [clojure.string :as str]
             [ipld.core :as ipld]))
 
 (defn- ref-pred [ref-name] (str "ref:" ref-name))
