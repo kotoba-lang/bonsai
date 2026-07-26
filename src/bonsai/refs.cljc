@@ -32,6 +32,6 @@
   [db repo-id]
   (into {}
         (keep (fn [[p os]]
-                (when (clojure.string/starts-with? p "ref:")
+                (when (str/starts-with? p "ref:")
                   [(subs p 4) (ipld/link-cid (first os))])))
         (arr/entity-attrs db repo-id)))
