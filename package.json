@@ -8,6 +8,7 @@
     "@noble/hashes": "^1.4.0"
   },
   "devDependencies": {
+    "nbb": "^1.5.211",
     "shadow-cljs": "^2.28.0"
   }
 }
