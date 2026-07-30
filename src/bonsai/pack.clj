@@ -4,10 +4,11 @@
   (:require [bonsai.delta :as delta]
             [bonsai.git-object :as object]
             [bonsai.loose-object :as loose]
+            [deflate.core :as codec]
+            [deflate.zlib :as zlib]
             [multiformats.core :as mf])
   (:import (java.io ByteArrayOutputStream)
-           (java.security MessageDigest)
-           (java.util.zip CRC32 Inflater DataFormatException)))
+           (java.security MessageDigest)))
 
 (def type->code {"commit" 1 "tree" 2 "blob" 3 "tag" 4})
 (def code->type {1 "commit" 2 "tree" 3 "blob" 4 "tag"})
@@ -43,21 +44,27 @@
       (write! out (sha1 without-trailer))
       (.toByteArray out))))
 
-(defn- inflate-at [bytes offset expected-size]
-  (let [z (Inflater.) out (ByteArrayOutputStream.) buf (byte-array 8192)]
-    (try
-      (.setInput z ^bytes bytes offset (- (alength ^bytes bytes) offset 20))
-      (while (not (.finished z))
-        (let [n (.inflate z buf)]
-          (when (and (zero? n) (or (.needsInput z) (.needsDictionary z)))
-            (throw (ex-info "truncated pack zlib stream" {:reason :truncated-pack})))
-          (.write out buf 0 n)))
-      (let [body (.toByteArray out) consumed (- (- (alength ^bytes bytes) offset 20) (.getRemaining z))]
-        (when-not (= expected-size (alength body))
-          (throw (ex-info "pack object size mismatch" {:reason :pack-size})))
-        [body consumed])
-      (catch DataFormatException e (throw (ex-info "invalid pack zlib" {:reason :invalid-pack} e)))
-      (finally (.end z)))))
+(defn- inflate-at
+  "Inflate the zlib stream that starts at `offset` in `v` (the pack as unsigned
+   bytes) and report how many compressed bytes it consumed — the pack format has
+   no per-object length, so the next object begins wherever this one stopped.
+
+   `v` is passed rather than the byte array so the slice is a `subvec` (O(1))
+   instead of a copy per object."
+  [v offset expected-size]
+  (let [{:keys [bytes end]}
+        (try
+          (zlib/unwrap* (subvec v offset (- (count v) 20)) nil)
+          (catch Exception e
+            (throw (ex-info (if (= :truncated (:reason (ex-data e)))
+                              "truncated pack zlib stream"
+                              "invalid pack zlib")
+                            {:reason (if (= :truncated (:reason (ex-data e)))
+                                       :truncated-pack :invalid-pack)}
+                            e))))]
+    (when-not (= expected-size (count bytes))
+      (throw (ex-info "pack object size mismatch" {:reason :pack-size})))
+    [(byte-array (map unchecked-byte bytes)) end]))
 
 (defn- parse-header [v p]
   (let [b0 (nth v p) code (bit-and (bit-shift-right b0 4) 7)]
@@ -90,7 +97,7 @@
                                                   (recur (inc q) b' (+ (bit-shift-left (inc d) 7)
                                                                        (bit-and b' 0x7f))))))
                                :else [nil q0])
-                [raw consumed] (inflate-at pack q size)
+                [raw consumed] (inflate-at v q size)
                 base (when base-ref
                        (if (= code 7)
                          (some #(when (= base-ref (:oid %)) %) out)
@@ -109,6 +116,7 @@
   "Build Git pack index v2 for decoded objects and the complete pack bytes."
   [objects pack]
   (let [sorted (sort-by :oid objects) out (ByteArrayOutputStream.)
+        pack-v (mapv u8 pack)
         pack-sum (java.util.Arrays/copyOfRange ^bytes pack (- (alength ^bytes pack) 20) (alength ^bytes pack))]
     (write! out (byte-array (map unchecked-byte [0xff 0x74 0x4f 0x63])))
     (write! out (u32 2))
@@ -119,9 +127,7 @@
             (write! out (u32 next)) (recur (inc i) next)))))
     (doseq [o sorted] (write! out (mf/unhex (:oid o))))
     (doseq [{:keys [offset packed-end]} sorted]
-      (let [crc (CRC32.)]
-        (.update crc ^bytes pack offset (- packed-end offset))
-        (write! out (u32 (.getValue crc)))))
+      (write! out (u32 (codec/crc32 (subvec pack-v offset packed-end)))))
     (doseq [{:keys [offset]} sorted]
       (when (>= offset 0x80000000) (throw (ex-info "large pack offsets not supported" {:offset offset})))
       (write! out (u32 offset)))
