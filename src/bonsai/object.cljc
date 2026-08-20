@@ -65,7 +65,11 @@
    commit/tree is a single ipld/link, so arrangement.core/refs-to can find
    \"which commits reference this tree\" for free — call it as
    (arr/refs-to db (ipld/link tree-cid)), NOT with the bare CID string;
-   refs-to's :ocp index is keyed by the Link value itself. commit/parents
+   the reverse-reference index behind refs-to is keyed by the Link value
+   itself. (That index is named :vaet as of arrangement a5d68dc8, and :ocp
+   in the older arrangement this repo still pins -- which is why the name
+   is not written here. Go through refs-to and it does not matter.)
+   commit/parents
    holds its whole ordered vector as one literal so parent order
    (first-parent history) survives, at the cost of not being
    reverse-indexed per-parent. Returns [db' cid]."
