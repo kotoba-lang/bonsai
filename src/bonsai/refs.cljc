@@ -6,6 +6,7 @@
    one arrangement db holding both objects and refs."
   (:require [arrangement.core :as arr]
             [arrangement.query :as q]
+            [clojure.string :as str]
             [ipld.core :as ipld]))
 
 (defn- ref-pred [ref-name] (str "ref:" ref-name))
@@ -31,6 +32,6 @@
   [db repo-id]
   (into {}
         (keep (fn [[p os]]
-                (when (clojure.string/starts-with? p "ref:")
+                (when (str/starts-with? p "ref:")
                   [(subs p 4) (ipld/link-cid (first os))])))
         (arr/entity-attrs db repo-id)))

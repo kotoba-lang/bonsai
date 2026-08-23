@@ -57,14 +57,89 @@ identity, delegates, signed refs).
   *before* the fast-forward check, and throws `ex-info` with a `:reason`
   of `:unauthorized` or `:not-fast-forward` so a caller can report the
   two differently (e.g. HTTP 403 vs 409).
+- **`bonsai.git-object`** — byte-exact Git loose-object compatibility seam.
+  It frames arbitrary blob/tree/commit/tag bodies as
+  `<type> <size>\0<body>`, computes the real Git SHA-1 OID, stores the exact
+  framed bytes under a raw CID, and projects the verified OID↔CID bridge into
+  the same arrangement db. Reads recompute CID, OID, framing, declared size,
+  and bridge membership before returning bytes. Golden blob vectors and live
+  `git hash-object` conformance tests pin JVM behavior; the same golden vectors
+  run under real compiled ClojureScript/Node.
+- **`bonsai.git-codec`** — typed Git tree and commit body codecs with canonical
+  modes, raw SHA-1 names, Git ordering, ordered parents, exact identities,
+  continuation headers, and messages; checked against real Git.
+- **`bonsai.loose-object`** — bounded zlib encode/decode for complete loose
+  object files. Git reads codec output directly from `.git/objects`.
+- **`bonsai.pack`** (JVM) and **`bonsai.delta`** — PACK v2 write/read,
+  OFS/REF delta resolution, delta application, and idx v2 generation with
+  fanout, CRC32, offsets, and checksums. Output passes `git verify-pack`.
+- **`bin/git-remote-kotoba`** — executable remote helper using Git's `connect`
+  capability for upload-pack/receive-pack. Local URLs open a bare repo directly;
+  `kotoba://` URLs use an isolated SHA-256-keyed cache plus the explicit
+  `KOTOBA_GIT_ADAPTER fetch|push <remote> <path>` lifecycle. Adapter execution
+  is argv-only (no shell interpolation), completes hydration before the Git
+  byte stream begins, and publishes only after successful receive-pack.
+- **`bin/kotoba-git-reference-adapter`** — filesystem reference adapter proving
+  network-shaped `kotoba://host/repo` clone/fetch/push and cache refresh. A
+  production adapter replaces its mirror fetch/push with CID block hydration,
+  closure verification, and `nekko.ref-event` admission.
+- **`bin/kotobase-http-git-adapter`** — HTTPS production-client adapter. It
+  GETs/PUTs Git bundles at `/git/v1/repos/<rid>/bundle`, supplies Authorization
+  through curl stdin rather than argv, and binds uploads to a SHA-256 digest and
+  complete ref projection. HTTP is restricted to an explicit loopback test.
 
 ## What this deliberately is NOT (yet)
 
-- **No git-CLI wire compatibility.** No smart-HTTP bridge, no byte-exact
-  SHA-1 object hashing, no binary packfile format matching real `git`. A
-  previous Rust implementation (`kotoba-git` in `kotoba-lang/kotoba`)
-  attempted exactly that and was deleted in full on 2026-07-01 — this repo
-  does not resurrect that scope.
+- **No deployed kotobase Git server route yet.** Local/materialized Git CLI
+  interoperability now covers typed objects, loose files, pack/index/delta,
+  upload-pack/receive-pack, and `git-remote-kotoba`. The helper currently opens
+  a bare repository path or a configured lifecycle adapter; the included
+  adapter may be filesystem-backed or use the included HTTPS client. The
+  corresponding kotobase.net route and durable `nekko.ref-event` transaction
+  are still pending. Smart HTTP discovery and partial-clone filters are also
+  pending. Native `bonsai.object` CIDs remain unchanged.
+
+### Remote-helper adapter contract
+
+```bash
+export PATH="$PWD/bin:$PATH"
+export KOTOBA_GIT_CACHE=/absolute/private/cache
+export KOTOBA_GIT_ADAPTER=/absolute/path/to/kotobase-adapter
+export KOTOBA_GIT_AUTHORIZATION='CACAO <base64-dag-cbor>'
+
+git clone kotoba://git.kotobase.net/<rid>
+git push kotoba://git.kotobase.net/<rid> main
+```
+
+The adapter is invoked without a shell:
+
+```text
+<adapter> fetch <remote-url> <materialized-bare-path>
+<adapter> push  <remote-url> <materialized-bare-path>
+```
+
+`fetch` must leave a complete verified bare repository at the supplied path.
+`push` runs only after `git-receive-pack` succeeds and must verify the resulting
+Git closure before publishing blocks and advancing signed peer refs. Network
+remotes fail closed unless both an absolute cache root and adapter are set.
+
+HTTPS wire contract:
+
+```text
+GET /git/v1/repos/<urlencoded-rid>/bundle
+  Authorization: CACAO ... | Bearer ...
+  -> 200 application/x-git-bundle | 404 unborn repository
+
+PUT /git/v1/repos/<urlencoded-rid>/bundle
+  Authorization: CACAO ... | Bearer ...
+  Content-Type: application/x-git-bundle
+  X-Kotoba-Bundle-SHA256: <64 lowercase hex>
+  X-Kotoba-Refs-EDN-B64: <base64url complete ref projection>
+```
+
+The server must authenticate before reading the body, recompute the digest,
+verify bundle closure and ref policy, persist all blocks, admit signed peer-ref
+events, and acknowledge only after bundle and ref state are durably readable.
 - **No transport/replication wiring in this repo.** `missing-since` gives
   the object diff a sync protocol needs, and `kotoba-lang/p2p` (gossip
   fanout + bitswap-style delta-sync + `chain/verify-chain`, now with
