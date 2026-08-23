@@ -9,7 +9,11 @@
          '[clojure.java.shell :refer [sh]]
          '[clojure.java.io :as io])
 
-(def cp (-> (sh "clojure" "-Spath") :out str/trim))
+(def local? (some #{"--local"} *command-line-args*))
+(def cp (-> (if local?
+              (sh "clojure" "-Spath" "-M:local")
+              (sh "clojure" "-Spath"))
+            :out str/trim))
 (def dirs (->> (str/split cp #":")
                (remove str/blank?)
                (filter #(.isDirectory (io/file %)))))
@@ -21,4 +25,5 @@
            "         :output-to \"out/test.js\"\n"
            "         :ns-regexp \"-test$\"}}}\n"))
 
-(println "wrote shadow-cljs.edn with" (count dirs) "source dirs from clojure -Spath")
+(println "wrote shadow-cljs.edn with" (count dirs) "source dirs from"
+         (if local? "clojure -M:local -Spath" "clojure -Spath"))

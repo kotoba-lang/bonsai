@@ -32,3 +32,10 @@
    core's own platform split, inherited unchanged)."
   [put! db prev-cid]
   (arr/commit! put! db prev-cid arr/current-schema-version identity-blind identity-encrypt))
+
+(defn restore
+  "Restore a complete Bonsai repo (objects and mutable refs) from a snapshot
+  CID returned by `persist!`. Returns a db directly on JVM and a Promise of
+  one on ClojureScript."
+  [get-fn snapshot-cid]
+  (arr/restore get-fn snapshot-cid identity-encrypt))

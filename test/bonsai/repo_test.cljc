@@ -29,7 +29,8 @@
         [db2 commit-cid] (obj/write-commit db1 {:tree blob-cid :parents [] :author "a"
                                                   :message "m" :ts 1})
         db (refs/set-ref db2 "repo1" "refs/heads/main" commit-cid)]
-    {:put! put! :db db}))
+    {:put! put! :get-fn #(get @store %) :db db
+     :blob-cid blob-cid :commit-cid commit-cid}))
 
 ;; arrangement.core/commit! (which repo/persist! wraps) returns the snapshot
 ;; CID directly on JVM, but a js/Promise of it on cljs (Web Crypto's AEAD/
@@ -52,4 +53,30 @@
          (-> (repo/persist! put! db nil)
              (.then (fn [snapshot-cid]
                       (is (string? snapshot-cid))
+                      (done))))))))
+
+#?(:clj
+   (deftest persisted-repo-restores-objects-and-refs
+     (let [{:keys [put! get-fn db blob-cid commit-cid]} (persist-fixture)
+           snapshot-cid (repo/persist! put! db nil)
+           restored (repo/restore get-fn snapshot-cid)]
+       (is (= (vec (obj/read-blob db blob-cid))
+              (vec (obj/read-blob restored blob-cid))))
+       (is (= (obj/read-commit db commit-cid)
+              (obj/read-commit restored commit-cid)))
+       (is (= commit-cid (refs/get-ref restored "repo1" "refs/heads/main")))))
+
+   :cljs
+   (deftest persisted-repo-restores-objects-and-refs
+     (async done
+       (let [{:keys [put! get-fn db blob-cid commit-cid]} (persist-fixture)]
+         (-> (repo/persist! put! db nil)
+             (.then #(repo/restore get-fn %))
+             (.then (fn [restored]
+                      (is (= (vec (obj/read-blob db blob-cid))
+                             (vec (obj/read-blob restored blob-cid))))
+                      (is (= (obj/read-commit db commit-cid)
+                             (obj/read-commit restored commit-cid)))
+                      (is (= commit-cid
+                             (refs/get-ref restored "repo1" "refs/heads/main")))
                       (done))))))))
