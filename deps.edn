@@ -3,6 +3,9 @@
         io.github.kotoba-lang/org-ietf-deflate {:git/sha "430d754313e9082114ec00554e0b6770d9d318c5"}
         io.github.kotoba-lang/org-ietf-cbor   {:git/sha "9c60d5832b771f869b237f5ba20f0b6de57cde84"}
         io.github.kotoba-lang/io-ipld         {:git/sha "48ba40490cf082a1473986ac757b8e2b214a3d1b"}
+        io.github.kotoba-lang/io-ipni-specs   {:git/sha "2c1559e2703bf41076188539c7086255b0d3c540"}
+        io.github.kotoba-lang/envelope        {:git/sha "8e71fa739ae6c7c9eed5863a41aa25b036f730a9"}
+        io.github.kotoba-lang/org-biscuitsec  {:git/sha "8a1fc9f6f8028a7847b3c7ec090a83916d3b1c4a"}
         io.github.kotoba-lang/prolly-tree     {:git/sha "ef43a9dfd0c483d62af9ace273d579c41b391511"}
         io.github.kotoba-lang/arrangement     {:git/sha "0eef5b2eb8a82b5fcf8236228aeff37a4d2c2497"}}
  :aliases
@@ -11,6 +14,9 @@
                            io.github.kotoba-lang/org-ietf-deflate {:local/root "../org-ietf-deflate"}
                            io.github.kotoba-lang/org-ietf-cbor   {:local/root "../org-ietf-cbor"}
                            io.github.kotoba-lang/io-ipld         {:local/root "../io-ipld"}
+                           io.github.kotoba-lang/io-ipni-specs   {:local/root "../io-ipni-specs"}
+                           io.github.kotoba-lang/envelope        {:local/root "../envelope"}
+                           io.github.kotoba-lang/org-biscuitsec  {:local/root "../org-biscuitsec"}
                            io.github.kotoba-lang/prolly-tree     {:local/root "../prolly-tree"}
                            io.github.kotoba-lang/arrangement     {:local/root "../arrangement"}}}
   :test {:extra-paths ["test"]

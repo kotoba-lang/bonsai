@@ -87,6 +87,15 @@ identity, delegates, signed refs).
   GETs/PUTs Git bundles at `/git/v1/repos/<rid>/bundle`, supplies Authorization
   through curl stdin rather than argv, and binds uploads to a SHA-256 digest and
   complete ref projection. HTTP is restricted to an explicit loopback test.
+- **`bonsai.private-repo`** (JVM composition layer) — seals a complete Git
+  bundle with `kotoba-lang/envelope`, addresses randomized ciphertext as a raw
+  IPLD CID, and addresses the recipient-scoped descriptor as DAG-CBOR. Sharing
+  re-wraps the existing content key without touching ciphertext; revocation is
+  only exposed as epoch rotation with a fresh key and ciphertext. Exact
+  fetch/push/share/rotate/advertise rights are authorized by an attenuable
+  Biscuit, while IPNI advertisements contain only the ciphertext CID and an
+  opaque caller-supplied context id. Storage and discovery transports are
+  injected, so GitHub, Radicle, and git.kotobase.net remain optional adapters.
 
 ## What this deliberately is NOT (yet)
 
@@ -147,6 +156,12 @@ events, and acknowledge only after bundle and ref state are durably readable.
   the actual sync layer, but `kotoba-git` itself has no dependency on
   `p2p` and no code wiring the two together; that composition lives in
   whatever application uses both.
+- **No claim that the current hosted bundle route is end-to-end encrypted.**
+  `bonsai.private-repo` is a tested provider-neutral client/storage primitive.
+  The existing `/git/v1/repos/:rid/bundle` route still accepts plaintext Git
+  bundles until a client and server negotiate the private snapshot media type;
+  using that hosted route is not proof that private plaintext stayed off the
+  operator boundary.
 - **No push authorization built into `kotoba-git.refs` itself.** Deciding
   *who's* allowed is still `kotoba-rad`'s job (`authorize-push?`/
   `authorize-push-cacao?`) — verified end-to-end in an integration script
