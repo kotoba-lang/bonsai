@@ -12,7 +12,7 @@
   injected, so GitHub, Radicle, and git.kotobase.net are adapters rather than
   semantic dependencies."
   (:require [biscuit.authorizer :as biscuit]
-            [clojure.string :as str]
+            [bonsai.private-wire :as wire]
             [envelope.model :as envelope]
             [envelope.seal-jvm :as seal]
             [ipld.core :as ipld]
@@ -20,8 +20,8 @@
             [ipni.metadata :as ipni-metadata]
             [multiformats.core :as mf]))
 
-(def version 1)
-(def operations #{"fetch" "push" "share" "rotate" "advertise"})
+(def version wire/version)
+(def operations wire/operations)
 
 (defn- byte-count [bytes]
   (alength ^bytes bytes))
@@ -29,45 +29,8 @@
 (defn- same-bytes? [a b]
   (java.util.Arrays/equals ^bytes a ^bytes b))
 
-(defn- valid-rid? [rid]
-  (and (string? rid)
-       (<= 1 (count rid) 200)
-       (boolean (re-matches #"[A-Za-z0-9][A-Za-z0-9._:@+-]*" rid))
-       (not (str/includes? rid ".."))))
-
 (defn- kw-name [x]
   (when x (name x)))
-
-(defn- exact-keys? [m required optional]
-  (and (map? m)
-       (every? #(contains? m %) required)
-       (every? (into (set required) optional) (keys m))))
-
-(def ^:private recipient-required
-  #{"id" "kind" "pub" "ephemeralPub" "iv" "wrapped"})
-(def ^:private recipient-optional #{"kem" "pqPub" "pqCt"})
-(def ^:private envelope-required
-  #{"id" "version" "alg" "kdf" "kem" "chunkBytes" "chunks"
-    "nonceEpoch" "chunkEpochs" "recipients"})
-(def ^:private descriptor-required
-  #{"kind" "version" "rid" "epoch" "ciphertext" "envelope"})
-(def ^:private descriptor-optional #{"parent"})
-
-(defn- valid-recipient-wire? [recipient]
-  (and (exact-keys? recipient recipient-required recipient-optional)
-       (every? #(and (string? (get recipient %)) (seq (get recipient %)))
-               recipient-required)
-       (if (= "x25519+ml-kem-768" (get recipient "kem"))
-         (every? #(and (string? (get recipient %)) (seq (get recipient %)))
-                 ["pqPub" "pqCt"])
-         (not (or (contains? recipient "pqPub")
-                  (contains? recipient "pqCt"))))))
-
-(defn- valid-envelope-wire? [env]
-  (and (exact-keys? env envelope-required #{})
-       (vector? (get env "recipients"))
-       (seq (get env "recipients"))
-       (every? valid-recipient-wire? (get env "recipients"))))
 
 (defn- recipient->wire [recipient]
   (cond-> {"id" (:recipient/id recipient)
@@ -117,19 +80,11 @@
                                 (get env "chunkEpochs"))
    :envelope/recipients (mapv wire->recipient (get env "recipients"))})
 
-(defn- descriptor-value [{:keys [rid epoch parent ciphertext-cid envelope]}]
-  (cond-> {"kind" "bonsai.private-snapshot"
-           "version" version
-           "rid" rid
-           "epoch" epoch
-           "ciphertext" (ipld/link ciphertext-cid)
-           "envelope" (envelope->wire envelope)}
-    parent (assoc "parent" (ipld/link parent))))
-
 (defn- assemble [rid epoch parent env ciphertext]
   (let [ciphertext-cid (str (mf/cidv1-raw ciphertext))
-        descriptor (descriptor-value {:rid rid :epoch epoch :parent parent
-                                      :ciphertext-cid ciphertext-cid :envelope env})
+        descriptor (wire/descriptor-value {:rid rid :epoch epoch :parent parent
+                                           :ciphertext-cid ciphertext-cid
+                                           :envelope (envelope->wire env)})
         descriptor-bytes (ipld/encode descriptor)
         snapshot-cid (ipld/cid descriptor-bytes)]
     {:snapshot/version version
@@ -149,7 +104,7 @@
   descriptor; callers may persist both under their returned CIDs."
   [{:keys [rid epoch parent bundle-bytes recipients]
     :or {epoch 0}}]
-  (when-not (valid-rid? rid)
+  (when-not (wire/valid-rid? rid)
     (throw (ex-info "invalid repository id" {:reason :invalid-rid :rid rid})))
   (when-not (nat-int? epoch)
     (throw (ex-info "snapshot epoch must be a natural integer"
@@ -170,28 +125,15 @@
   "Rehydrate and verify a snapshot descriptor plus ciphertext bytes. Both CIDs
   are recomputed before any key is used."
   [descriptor-bytes ciphertext]
-  (let [descriptor (ipld/decode descriptor-bytes)
-        kind (get descriptor "kind")
-        v (get descriptor "version")
-        rid (get descriptor "rid")
-        epoch (get descriptor "epoch")
-        ciphertext-cid (some-> (get descriptor "ciphertext") ipld/link-cid)
-        parent (some-> (get descriptor "parent") ipld/link-cid)
-        env (wire->envelope (get descriptor "envelope"))
-        actual-ciphertext-cid (str (mf/cidv1-raw ciphertext))]
-    (when-not (and (exact-keys? descriptor descriptor-required descriptor-optional)
-                   (valid-envelope-wire? (get descriptor "envelope"))
-                   (= "bonsai.private-snapshot" kind) (= version v)
-                   (valid-rid? rid) (nat-int? epoch) (envelope/valid? env)
-                   (= (str "bonsai:" rid) (:envelope/id env))
-                   (= epoch (:envelope/nonce-epoch env))
-                   (= epoch (get-in env [:envelope/chunk-epochs 0])))
+  (let [verified (wire/verify-snapshot descriptor-bytes ciphertext)
+        descriptor (:snapshot/descriptor verified)
+        rid (:snapshot/rid verified)
+        epoch (:snapshot/epoch verified)
+        parent (:snapshot/parent verified)
+        env (wire->envelope (get descriptor "envelope"))]
+    (when-not (envelope/valid? env)
       (throw (ex-info "invalid private snapshot descriptor"
                       {:reason :invalid-descriptor})))
-    (when-not (= ciphertext-cid actual-ciphertext-cid)
-      (throw (ex-info "private snapshot ciphertext CID mismatch"
-                      {:reason :ciphertext-cid-mismatch
-                       :expected ciphertext-cid :actual actual-ciphertext-cid})))
     (let [restored (assemble rid epoch parent env ciphertext)]
       (when-not (same-bytes? descriptor-bytes (:snapshot/descriptor-bytes restored))
         (throw (ex-info "private snapshot descriptor is not canonical"
@@ -254,7 +196,7 @@
   authority with a `right(rid, operation)` fact. The verifier contributes the
   current operation as context, so attenuated token checks still run."
   [token {:keys [rid operation root-public-key verify-fn]}]
-  (if-not (and (valid-rid? rid) (contains? operations operation))
+  (if-not (and (wire/valid-rid? rid) (contains? operations operation))
     {:allowed? false :verified? false :reason :invalid-request}
     (biscuit/authorize
      token
