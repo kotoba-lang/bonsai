@@ -4,7 +4,8 @@
   This namespace contains no key material and performs no decryption. It is the
   shared trust-boundary validator used by JVM clients and ClojureScript storage
   services: canonical DAG-CBOR, descriptor identity, ciphertext identity, and
-  the linear snapshot-head transition are decided here once."
+  each descriptor-parent transition and the client-observed expected frontier
+  are decided here once."
   (:require [clojure.string :as str]
             [ipld.core :as ipld]
             [multiformats.core :as mf]))
@@ -117,9 +118,9 @@
     (assoc info :snapshot/ciphertext ciphertext)))
 
 (defn transition
-  "Validate one mutable-head transition. Git history may branch and merge inside
-  the encrypted bundle; this outer storage log is linear so concurrent writers
-  receive a conflict instead of silently replacing one another."
+  "Validate a candidate against its selected descriptor parent. The storage
+  plane separately compares the command's expected_heads with its complete
+  immutable frontier, preserving concurrent writers as distinct tips."
   [current candidate operation]
   (cond
     (not (contains? #{"push" "share" "rotate"} operation))
