@@ -170,7 +170,16 @@
     :bytes (:snapshot/ciphertext snapshot)}])
 
 (defn head-command
-  [snapshot operation & [{:keys [advertise context-id]}]]
-  (cond-> {"snapshot_cid" (:snapshot/cid snapshot) "operation" operation}
-    advertise (assoc "advertise" true)
-    context-id (assoc "context_id" context-id)))
+  [snapshot operation & [opts]]
+  (let [{:keys [advertise context-id]} opts
+        expected (if (contains? opts :expected-heads)
+                   (:expected-heads opts)
+                   (if-let [parent (:snapshot/parent snapshot)] [parent] []))]
+    (when-not (and (sequential? expected) (every? string? expected))
+      (throw (ex-info "expected heads must be snapshot CID strings"
+                      {:reason :invalid-expected-heads})))
+    (cond-> {"snapshot_cid" (:snapshot/cid snapshot)
+             "operation" operation
+             "expected_heads" (vec (sort (distinct expected)))}
+      advertise (assoc "advertise" true)
+      context-id (assoc "context_id" context-id))))

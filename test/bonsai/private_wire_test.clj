@@ -23,7 +23,8 @@
     (is (= (:snapshot/cid snapshot) (:snapshot/cid verified)))
     (is (= #{:descriptor :ciphertext}
            (set (map :role (wire/snapshot-blocks snapshot)))))
-    (is (= {"snapshot_cid" (:snapshot/cid snapshot) "operation" "push"}
+    (is (= {"snapshot_cid" (:snapshot/cid snapshot)
+            "operation" "push" "expected_heads" []}
            (wire/head-command snapshot "push")))))
 
 (deftest transition-policy-distinguishes-push-share-and-rotation
@@ -49,6 +50,15 @@
     (is (:ok? (wire/transition first-snapshot shared "share")))
     (is (:ok? (wire/transition shared rotated "rotate")))
     (is (:ok? (wire/transition rotated pushed "push")))
+    (is (= [(:snapshot/cid rotated)]
+           (get (wire/head-command pushed "push") "expected_heads")))
+    (is (= ["bafy-left" "bafy-right"]
+           (get (wire/head-command pushed "push"
+                                   {:expected-heads ["bafy-right" "bafy-left"]})
+                "expected_heads")))
+    (is (thrown-with-msg? Exception #"expected heads"
+                          (wire/head-command pushed "push"
+                                             {:expected-heads [nil]})))
     (is (= :share-must-only-rewrap-key
            (:reason (wire/transition first-snapshot pushed-from-first "share"))))
     (is (= :snapshot-parent-conflict
