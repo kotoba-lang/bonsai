@@ -69,8 +69,16 @@
         snapshot (private/seal-snapshot
                   {:rid "rad:wire" :bundle-bytes (utf8-bytes "bundle")
                    :recipients [(:wire alice)]})
-        smuggled (ipld/encode (assoc (:snapshot/descriptor snapshot)
-                                     "plaintextRef" "refs/heads/main"))]
+        descriptor (:snapshot/descriptor snapshot)
+        smuggled (ipld/encode (assoc descriptor "plaintextRef" "refs/heads/main"))
+        changed-suite (fn [field value]
+                        (ipld/encode (assoc-in descriptor ["envelope" field] value)))]
     (testing "unknown fields cannot become an accidental plaintext side channel"
       (is (thrown-with-msg? Exception #"invalid.*descriptor"
-                            (wire/descriptor-info smuggled))))))
+                            (wire/descriptor-info smuggled))))
+    (testing "the storage boundary rejects algorithm confusion and downgrade"
+      (doseq [bytes [(changed-suite "alg" "aes-128-gcm")
+                     (changed-suite "kdf" "hkdf-sha1")
+                     (changed-suite "kem" "rsa-oaep")]]
+        (is (thrown-with-msg? Exception #"invalid.*descriptor"
+                              (wire/descriptor-info bytes)))))))

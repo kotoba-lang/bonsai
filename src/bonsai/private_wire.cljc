@@ -39,27 +39,37 @@
 (defn- nonblank? [value]
   (and (string? value) (not (str/blank? value))))
 
-(defn- valid-recipient? [recipient]
+(defn- valid-recipient? [recipient envelope-kem]
   (and (exact-keys? recipient recipient-required recipient-optional)
        (every? #(nonblank? (get recipient %)) recipient-required)
-       (if (= "x25519+ml-kem-768" (get recipient "kem"))
-         (every? #(nonblank? (get recipient %)) ["pqPub" "pqCt"])
-         (not (or (contains? recipient "pqPub")
-                  (contains? recipient "pqCt"))))))
+       (case envelope-kem
+         "x25519"
+         (not (or (contains? recipient "kem")
+                  (contains? recipient "pqPub")
+                  (contains? recipient "pqCt")))
+
+         "x25519+ml-kem-768"
+         (and (= envelope-kem (get recipient "kem"))
+              (every? #(nonblank? (get recipient %)) ["pqPub" "pqCt"]))
+
+         false)))
 
 (defn- valid-envelope? [env rid epoch]
-  (let [recipients (get env "recipients")]
+  (let [recipients (get env "recipients")
+        kem (get env "kem")]
     (and (exact-keys? env envelope-required #{})
          (= (str "bonsai:" rid) (get env "id"))
-         (nat-int? (get env "version"))
-         (every? #(nonblank? (get env %)) ["alg" "kdf" "kem"])
+         (= version (get env "version"))
+         (= "aes-256-gcm" (get env "alg"))
+         (= "hkdf-sha256" (get env "kdf"))
+         (contains? #{"x25519" "x25519+ml-kem-768"} kem)
          (pos-int? (get env "chunkBytes"))
          (= 1 (get env "chunks"))
          (= epoch (get env "nonceEpoch"))
          (= {"0" epoch} (get env "chunkEpochs"))
          (vector? recipients)
          (seq recipients)
-         (every? valid-recipient? recipients)
+         (every? #(valid-recipient? % kem) recipients)
          (= (count recipients) (count (set (map #(get % "id") recipients)))))))
 
 (defn descriptor-value
