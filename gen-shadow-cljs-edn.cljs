@@ -10,7 +10,7 @@
 ;; the fleet task/script host). Standalone -- no dependency on the
 ;; superproject's scripts/nbb_compat shim, matching this repo's own "no
 ;; non-portable dependency" design (see README's Testing section).
-(require '[clojure.string :as str])
+(require '[kotoba.lang.text :as str])
 
 (def fs (js/require "node:fs"))
 (def cp-mod (js/require "node:child_process"))
