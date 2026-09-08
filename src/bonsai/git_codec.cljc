@@ -1,6 +1,6 @@
 (ns bonsai.git-codec
   "Typed byte-exact codecs for canonical Git tree and commit object bodies."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [multiformats.core :as mf]))
 
 (def tree-modes #{"100644" "100755" "120000" "160000" "40000"})

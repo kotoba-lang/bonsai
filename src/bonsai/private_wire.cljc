@@ -6,7 +6,7 @@
   services: canonical DAG-CBOR, descriptor identity, ciphertext identity, and
   each descriptor-parent transition and the client-observed expected frontier
   are decided here once."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [ipld.core :as ipld]
             [multiformats.core :as mf]))
 

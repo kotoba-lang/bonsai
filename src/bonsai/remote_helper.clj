@@ -2,7 +2,7 @@
   "Lifecycle and safety boundary for git-remote-kotoba transports."
   (:require [babashka.process :as process]
             [clojure.java.io :as io]
-            [clojure.string :as str])
+            [kotoba.lang.text :as str])
   (:import (java.security MessageDigest)))
 
 (def services #{"git-upload-pack" "git-receive-pack"})
