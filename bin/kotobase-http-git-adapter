@@ -1,4 +1,4 @@
-#!/usr/bin/env bb
+#!/usr/bin/env kbb
 (ns kotobase-http-git-adapter
   "HTTPS production adapter for git-remote-kotoba.
 

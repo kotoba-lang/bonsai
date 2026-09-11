@@ -220,16 +220,16 @@ events, and acknowledge only after bundle and ref state are durably readable.
 ## Testing
 
 ```
-clojure -M:test          # against the pinned :git/sha deps
-clojure -M:local:test    # against sibling checkouts in ../ (same-monorepo dev)
+kbb -M:test          # against the pinned :git/sha deps
+kbb -M:local:test    # against sibling checkouts in ../ (same-monorepo dev)
 npm install && npm run test:cljs   # real ClojureScript (shadow-cljs node-test), not just .cljc-named
 ```
 
 Unlike `kotoba-rad` (which pulls in JVM-only `ed25519.core`/`cacao.core`),
 `kotoba-git` has no non-portable dependency, so it runs real ClojureScript
 CI (`gen-shadow-cljs-edn.bb` resolves `shadow-cljs.edn`'s `:source-paths`
-from `clojure -Spath`, so cljs always tests the exact pinned versions
-`clojure -M:test` does — never a hand-duplicated, driftable list).
+from `kbb -Spath`, so cljs always tests the exact pinned versions
+`kbb -M:test` does — never a hand-duplicated, driftable list).
 Wiring this up caught two genuine portability bugs the `.cljc` extension
 alone didn't guarantee: `kotoba-git.repo`'s `identity-blind`/
 `identity-encrypt` had to become real `js/Promise`-returning functions on

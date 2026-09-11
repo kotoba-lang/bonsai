@@ -1,4 +1,4 @@
-#!/usr/bin/env bb
+#!/usr/bin/env kbb
 (ns kotoba-git-reference-adapter
   "Filesystem reference implementation of the network adapter contract.
    KOTOBA_GIT_REFERENCE_ROOT maps kotoba://host/path to a bare repo under that
