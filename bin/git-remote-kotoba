@@ -18,7 +18,7 @@
 ;; classpath discovery is not reliable. Load the implementation relative to
 ;; this executable; installed copies must preserve bin/../src.
 (load-file (.getCanonicalPath
-            (io/file (.getParentFile (io/file *file*)) "../src/bonsai/remote_helper.clj")))
+            (io/file (.getParentFile (io/file *file*)) "../src/bonsai/remote_helper.cljk")))
 (def helper-connect! (requiring-resolve 'bonsai.remote-helper/connect!))
 (def helper-prepare! (requiring-resolve 'bonsai.remote-helper/prepare!))
 
