@@ -1,10 +1,10 @@
 (ns remote-helper-test
-  (:require [clojure.java.shell :as shell]
+  (:require [kotoba.io :as kio] [clojure.java.shell :as shell]
             [kotoba.test :refer [deftest is]]))
 
 (deftest remote-helper-clone-fetch-push
-  (let [root (.toFile (java.nio.file.Files/createTempDirectory
-                       "bonsai-remote-" (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [root (kio/temp-dir
+                       "bonsai-remote-")
         origin (java.io.File. root "origin.git")
         seed (java.io.File. root "seed")
         clone (java.io.File. root "clone")
@@ -28,8 +28,8 @@
       (finally (doseq [f (reverse (file-seq root))] (.delete ^java.io.File f))))))
 
 (deftest network-adapter-materializes-and-publishes
-  (let [root (.toFile (java.nio.file.Files/createTempDirectory
-                       "bonsai-network-" (make-array java.nio.file.attribute.FileAttribute 0)))
+  (let [root (kio/temp-dir
+                       "bonsai-network-")
         remote-root (java.io.File. root "remote")
         cache-root (java.io.File. root "cache")
         seed (java.io.File. root "seed") clone (java.io.File. root "clone")
@@ -85,8 +85,8 @@
         _ (.createContext server "/" handler)
         _ (.start server)
         port (.getPort (.getAddress server))
-        root (.toFile (java.nio.file.Files/createTempDirectory
-                       "bonsai-http-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        root (kio/temp-dir
+                       "bonsai-http-")
         cache-root (java.io.File. root "cache") seed (java.io.File. root "seed")
         clone (java.io.File. root "clone") helper-dir (.getCanonicalPath (java.io.File. "bin"))
         adapter (.getCanonicalPath (java.io.File. "bin/kotobase-http-git-adapter"))

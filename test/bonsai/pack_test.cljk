@@ -1,17 +1,17 @@
 (ns bonsai.pack-test
-  (:require [bonsai.pack :as pack]
-            [clojure.java.shell :as shell]
+  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] [bonsai.pack :as pack]
+            [kotoba.process :as shell]
             [kotoba.test :refer [deftest is]]))
 
-(defn utf8 [s] (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8))
+(defn utf8 [s] (kbytes/utf8-bytes ^String s))
 
 (deftest pack-and-index-are-accepted-by-git
   (let [bytes (pack/encode [{:type "blob" :body (utf8 "hello\n")}
                             {:type "blob" :body (utf8 "world\n")}])
         objects (pack/decode bytes)
         idx (pack/encode-index-v2 objects bytes)
-        dir (.toFile (java.nio.file.Files/createTempDirectory
-                      "bonsai-pack-" (make-array java.nio.file.attribute.FileAttribute 0)))
+        dir (kio/temp-dir
+                      "bonsai-pack-")
         pack-file (java.io.File. dir "objects.pack") idx-file (java.io.File. dir "objects.idx")]
     (try
       (with-open [o (java.io.FileOutputStream. pack-file)] (.write o ^bytes bytes))

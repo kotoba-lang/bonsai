@@ -1,7 +1,7 @@
 (ns bonsai.remote-helper
   "Lifecycle and safety boundary for git-remote-kotoba transports."
-  (:require [babashka.process :as process]
-            [clojure.java.io :as io]
+  (:require [kotoba.bytes :as kbytes] [babashka.process :as process]
+            [kotoba.io :as io]
             [kotoba.lang.text :as str])
   (:import (java.security MessageDigest)))
 
@@ -9,7 +9,7 @@
 
 (defn- hex [bytes] (apply str (map #(format "%02x" (bit-and (int %) 0xff)) bytes)))
 (defn cache-key [remote]
-  (hex (.digest (MessageDigest/getInstance "SHA-256") (.getBytes ^String remote "UTF-8"))))
+  (hex (.digest (MessageDigest/getInstance "SHA-256") (kbytes/utf8-bytes ^String remote))))
 
 (defn local-path? [url]
   (or (str/starts-with? url "/") (str/starts-with? url "kotoba::")))
@@ -34,10 +34,10 @@
     (do
       (when-not (network-remote? url)
         (throw (ex-info "unsupported kotoba remote URL" {:reason :unsupported-url})))
-      (when-not (and cache-root (.isAbsolute (io/file cache-root)))
+      (when-not (and cache-root (io/absolute? (io/file cache-root)))
         (throw (ex-info "KOTOBA_GIT_CACHE must be an absolute path for network remotes"
                         {:reason :invalid-cache})))
-      (.getPath (io/file cache-root (str (cache-key url) ".git"))))))
+      (io/path (io/file cache-root (str (cache-key url) ".git"))))))
 
 (defn run-adapter!
   "Run the configured adapter as argv, never through a shell. Operation is
@@ -60,7 +60,7 @@
   [url {:keys [cache-root adapter]}]
   (let [path (materialized-path url cache-root)]
     (when (network-remote? url)
-      (.mkdirs (io/file cache-root))
+      (io/mkdirs (io/file cache-root))
       (run-adapter! adapter "fetch" url path))
     path))
 

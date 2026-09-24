@@ -1,12 +1,12 @@
 (ns bonsai.private-repo-test
-  (:require [biscuit.token :as biscuit-token]
+  (:require [kotoba.bytes :as kbytes] [biscuit.token :as biscuit-token]
             [bonsai.private-repo :as private]
             [kotoba.test :refer [deftest is]]
             [envelope.seal-jvm :as seal]
             [ipld.core :as ipld]))
 
-(defn- utf8-bytes [s] (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8))
-(defn- text [bs] (String. ^bytes bs java.nio.charset.StandardCharsets/UTF_8))
+(defn- utf8-bytes [s] (kbytes/utf8-bytes ^String s))
+(defn- text [bs] (kbytes/utf8-string ^bytes bs))
 
 (defn- recipient [id]
   (let [{:keys [priv pub]} (seal/generate-recipient)]
