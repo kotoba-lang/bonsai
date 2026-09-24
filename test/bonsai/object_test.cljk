@@ -1,5 +1,5 @@
 (ns bonsai.object-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [arrangement.core :as arr]
             [ipld.core :as ipld]
             [bonsai.object :as obj]

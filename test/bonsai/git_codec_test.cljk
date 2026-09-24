@@ -2,7 +2,7 @@
   (:require #?(:clj [clojure.java.shell :as shell])
             [bonsai.git-codec :as codec]
             [bonsai.git-object :as object]
-            [clojure.test :refer [deftest is testing]]))
+            [kotoba.test :refer [deftest is testing]]))
 
 (def blob-oid "ce013625030ba8dba906f756967f9e9ca394464a")
 (def empty-tree-oid "4b825dc642cb6eb9a060e54bf8d69288fbee4904")

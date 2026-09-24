@@ -1,6 +1,6 @@
 (ns bonsai.delta-test
   (:require [bonsai.delta :as delta]
-            [clojure.test :refer [deftest is]]))
+            [kotoba.test :refer [deftest is]]))
 
 (defn- utf8 [s]
   #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)

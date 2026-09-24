@@ -3,7 +3,7 @@
             [arrangement.core :as arr]
             [bonsai.git-object :as git-object]
             [bonsai.repo :as repo]
-            [clojure.test :refer [deftest is testing]]))
+            [kotoba.test :refer [deftest is testing]]))
 
 (defn- utf8 [s]
   #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)

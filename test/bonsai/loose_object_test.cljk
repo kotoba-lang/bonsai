@@ -1,7 +1,7 @@
 (ns bonsai.loose-object-test
   (:require #?(:clj [clojure.java.shell :as shell])
             [bonsai.loose-object :as loose]
-            [clojure.test :refer [deftest is]]))
+            [kotoba.test :refer [deftest is]]))
 
 (defn- utf8 [s]
   #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)
