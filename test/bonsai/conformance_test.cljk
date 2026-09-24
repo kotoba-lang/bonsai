@@ -15,7 +15,7 @@
    If one of these assertions fails, you have made a BREAKING change to
    content addressing — that is a migration event for every stored CID, not
    a value to re-snapshot."
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [bonsai.object :as obj]
             [bonsai.repo :as repo]
             [multiformats.core :as mf]))

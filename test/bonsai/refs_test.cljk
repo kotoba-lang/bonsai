@@ -1,5 +1,5 @@
 (ns bonsai.refs-test
-  (:require [clojure.test :refer [deftest is]]
+  (:require [kotoba.test :refer [deftest is]]
             [multiformats.core :as mf]
             [bonsai.repo :as repo]
             [bonsai.refs :as refs]))

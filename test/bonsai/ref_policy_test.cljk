@@ -1,5 +1,5 @@
 (ns bonsai.ref-policy-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [bonsai.object :as obj]
             [bonsai.repo :as repo]
             [bonsai.refs :as refs]

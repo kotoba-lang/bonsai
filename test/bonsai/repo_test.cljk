@@ -1,5 +1,5 @@
 (ns bonsai.repo-test
-  (:require #?(:clj [clojure.test :refer [deftest is]]
+  (:require #?(:clj [kotoba.test :refer [deftest is]]
                :cljs [cljs.test :refer [deftest is async] :include-macros true])
             [bonsai.object :as obj]
             [bonsai.refs :as refs]

@@ -1,7 +1,7 @@
 (ns bonsai.private-repo-test
   (:require [biscuit.token :as biscuit-token]
             [bonsai.private-repo :as private]
-            [clojure.test :refer [deftest is]]
+            [kotoba.test :refer [deftest is]]
             [envelope.seal-jvm :as seal]
             [ipld.core :as ipld]))
 

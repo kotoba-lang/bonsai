@@ -1,7 +1,7 @@
 (ns bonsai.private-wire-test
   (:require [bonsai.private-repo :as private]
             [bonsai.private-wire :as wire]
-            [clojure.test :refer [deftest is testing]]
+            [kotoba.test :refer [deftest is testing]]
             [envelope.seal-jvm :as seal]
             [ipld.core :as ipld]))
 
