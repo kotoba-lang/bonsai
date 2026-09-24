@@ -1,5 +1,5 @@
 (ns bonsai.git-object-test
-  (:require #?(:clj [clojure.java.shell :as shell])
+  (:require #?(:clj [kotoba.process :as shell])
             [arrangement.core :as arr]
             [bonsai.git-object :as git-object]
             [bonsai.repo :as repo]

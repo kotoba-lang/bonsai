@@ -1,12 +1,12 @@
 (ns bonsai.private-wire-test
-  (:require [bonsai.private-repo :as private]
+  (:require [kotoba.bytes :as kbytes] [bonsai.private-repo :as private]
             [bonsai.private-wire :as wire]
             [kotoba.test :refer [deftest is testing]]
             [envelope.seal-jvm :as seal]
             [ipld.core :as ipld]))
 
 (defn- utf8-bytes [text]
-  (.getBytes ^String text java.nio.charset.StandardCharsets/UTF_8))
+  (kbytes/utf8-bytes ^String text))
 
 (defn- recipient [id]
   (let [{:keys [priv pub]} (seal/generate-recipient)]
