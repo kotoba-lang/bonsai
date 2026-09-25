@@ -1,11 +1,11 @@
 (ns bonsai.private-wire-portable-test
-  (:require [bonsai.private-wire :as wire]
+  (:require [kotoba.bytes :as kbytes] [bonsai.private-wire :as wire]
             [kotoba.test :refer [deftest is]]
             [ipld.core :as ipld]
             [multiformats.core :as mf]))
 
 (defn- utf8-bytes [text]
-  #?(:clj (.getBytes ^String text java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes ^String text)
      :cljs (.encode (js/TextEncoder.) text)))
 
 (defn- descriptor [rid epoch ciphertext-cid parent]

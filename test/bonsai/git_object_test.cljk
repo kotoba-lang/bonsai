@@ -1,12 +1,12 @@
 (ns bonsai.git-object-test
-  (:require #?(:clj [kotoba.process :as shell])
+  (:require [kotoba.bytes :as kbytes] #?(:clj [kotoba.process :as shell])
             [arrangement.core :as arr]
             [bonsai.git-object :as git-object]
             [bonsai.repo :as repo]
             [kotoba.test :refer [deftest is testing]]))
 
 (defn- utf8 [s]
-  #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes ^String s)
      :cljs (.encode (js/TextEncoder.) s)))
 
 (deftest git-blob-golden-vectors

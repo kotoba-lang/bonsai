@@ -1,9 +1,9 @@
 (ns bonsai.delta-test
-  (:require [bonsai.delta :as delta]
+  (:require [kotoba.bytes :as kbytes] [bonsai.delta :as delta]
             [kotoba.test :refer [deftest is]]))
 
 (defn- utf8 [s]
-  #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes ^String s)
      :cljs (.encode (js/TextEncoder.) s)))
 
 (deftest literal-delta-roundtrip

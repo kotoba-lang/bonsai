@@ -1,10 +1,10 @@
 (ns bonsai.loose-object-test
-  (:require #?(:clj [kotoba.process :as shell])
+  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] #?(:clj [kotoba.process :as shell])
             [bonsai.loose-object :as loose]
             [kotoba.test :refer [deftest is]]))
 
 (defn- utf8 [s]
-  #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes ^String s)
      :cljs (.encode (js/TextEncoder.) s)))
 
 (deftest loose-roundtrip
@@ -22,8 +22,8 @@
 
 #?(:clj
    (deftest loose-file-is-readable-by-git
-     (let [dir (.toFile (java.nio.file.Files/createTempDirectory
-                         "bonsai-loose-" (make-array java.nio.file.attribute.FileAttribute 0)))
+     (let [dir (kio/temp-dir
+                         "bonsai-loose-")
            git-dir (java.io.File. dir ".git")
            oid "ce013625030ba8dba906f756967f9e9ca394464a"
            object-dir (java.io.File. git-dir (str "objects/" (subs oid 0 2)))

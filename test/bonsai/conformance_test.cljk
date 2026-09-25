@@ -15,13 +15,13 @@
    If one of these assertions fails, you have made a BREAKING change to
    content addressing — that is a migration event for every stored CID, not
    a value to re-snapshot."
-  (:require [kotoba.test :refer [deftest is testing]]
+  (:require [kotoba.bytes :as kbytes] [kotoba.test :refer [deftest is testing]]
             [bonsai.object :as obj]
             [bonsai.repo :as repo]
             [multiformats.core :as mf]))
 
 (defn- utf8 [s]
-  #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes ^String s)
      :cljs (.encode (js/TextEncoder.) s)))
 
 (def ^:private scene-text
