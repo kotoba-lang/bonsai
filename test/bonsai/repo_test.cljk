@@ -1,12 +1,12 @@
 (ns bonsai.repo-test
-  (:require #?(:clj [kotoba.test :refer [deftest is]]
+  (:require [kotoba.bytes :as kbytes] #?(:clj [kotoba.test :refer [deftest is]]
                :cljs [cljs.test :refer [deftest is async] :include-macros true])
             [bonsai.object :as obj]
             [bonsai.refs :as refs]
             [bonsai.repo :as repo]))
 
 (defn- utf8-bytes [s]
-  #?(:clj (.getBytes ^String s "UTF-8")
+  #?(:clj (kbytes/utf8-bytes ^String s)
      :cljs (.encode (js/TextEncoder.) s)))
 
 (deftest objects-and-refs-coexist-in-one-repo-db

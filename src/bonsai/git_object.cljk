@@ -6,7 +6,7 @@
    Git hashes `<type> <decimal-size>\\0<body>`. We store those exact framed
    bytes under a raw CID and project both identities into arrangement so the
    bridge can be rebuilt and independently verified."
-  (:require [arrangement.core :as arr]
+  (:require [kotoba.bytes :as kbytes] [arrangement.core :as arr]
             [multiformats.core :as mf]
             #?(:cljs ["crypto" :as crypto])))
 
@@ -20,11 +20,11 @@
      :cljs (if (instance? js/Uint8Array xs) xs (js/Uint8Array. (clj->js xs)))))
 
 (defn- utf8 [s]
-  #?(:clj (.getBytes ^String s java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-bytes ^String s)
      :cljs (.encode (js/TextEncoder.) s)))
 
 (defn- utf8-string [bytes]
-  #?(:clj (String. ^bytes bytes java.nio.charset.StandardCharsets/UTF_8)
+  #?(:clj (kbytes/utf8-string ^bytes bytes)
      :cljs (.decode (js/TextDecoder. "utf-8" #js {:fatal true}) bytes)))
 
 (defn- concat-bytes [a b]

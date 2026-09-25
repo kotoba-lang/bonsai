@@ -1,5 +1,5 @@
 (ns bonsai.git-codec-test
-  (:require #?(:clj [clojure.java.shell :as shell])
+  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] #?(:clj [clojure.java.shell :as shell])
             [bonsai.git-codec :as codec]
             [bonsai.git-object :as object]
             [kotoba.test :refer [deftest is testing]]))
@@ -31,8 +31,8 @@
      (testing "tree body and git mktree produce the same OID"
        (let [body (codec/encode-tree [{:mode "100644" :name "hello.txt" :oid blob-oid}])
              ours (object/object-oid "tree" body)
-             dir (.toFile (java.nio.file.Files/createTempDirectory
-                           "bonsai-tree-" (make-array java.nio.file.attribute.FileAttribute 0)))]
+             dir (kio/temp-dir
+                           "bonsai-tree-")]
          (try
            (is (zero? (:exit (shell/sh "git" "init" "--bare" (.getPath dir)))))
            (let [{:keys [exit out err]}
@@ -50,7 +50,6 @@
                     :message "initial\n"})
              ours (object/object-oid "commit" body)
              {:keys [exit out err]} (shell/sh "git" "hash-object" "-t" "commit" "--stdin"
-                                                   :in (String. ^bytes body
-                                                                java.nio.charset.StandardCharsets/UTF_8))]
+                                                   :in (kbytes/utf8-string ^bytes body))]
          (is (zero? exit) err)
          (is (= (.trim ^String out) ours))))))

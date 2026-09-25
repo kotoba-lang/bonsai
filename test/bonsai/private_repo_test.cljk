@@ -1,5 +1,5 @@
 (ns bonsai.private-repo-test
-  (:require [kotoba.bytes :as kbytes] [biscuit.token :as biscuit-token]
+  (:require [kotoba.lang.error :as kerror] [kotoba.bytes :as kbytes] [biscuit.token :as biscuit-token]
             [bonsai.private-repo :as private]
             [kotoba.test :refer [deftest is]]
             [envelope.seal-jvm :as seal]
@@ -66,7 +66,7 @@
               (:snapshot/ciphertext-cid rotated)))
     (is (= "secret bundle"
            (text (private/open-snapshot rotated (:id alice) (:priv alice)))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"no grant"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"no grant"
                           (private/open-snapshot rotated (:id bob) (:priv bob))))))
 
 (deftest corrupted-ciphertext-is-rejected-before-decryption
@@ -76,7 +76,7 @@
                    :recipients [(:wire alice)]})
         corrupted (aclone ^bytes (:snapshot/ciphertext snapshot))]
     (aset-byte corrupted 0 (unchecked-byte (bit-xor 1 (aget corrupted 0))))
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"CID mismatch"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"CID mismatch"
                           (private/restore-snapshot
                            (:snapshot/descriptor-bytes snapshot) corrupted)))))
 
@@ -87,7 +87,7 @@
                    :recipients [(:wire alice)]})
         descriptor (assoc (:snapshot/descriptor snapshot) "plaintextOid" "leak")
         descriptor-bytes (ipld/encode descriptor)]
-    (is (thrown-with-msg? clojure.lang.ExceptionInfo #"invalid.*descriptor"
+    (is (thrown-with-msg? kerror/ExceptionInfo #"invalid.*descriptor"
                           (private/restore-snapshot descriptor-bytes
                                                     (:snapshot/ciphertext snapshot))))))
 
