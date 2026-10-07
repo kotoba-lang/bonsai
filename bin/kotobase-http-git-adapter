@@ -15,14 +15,19 @@
             ["node:crypto" :as crypto]
             ["node:child_process" :as cp]))
 
-(defn fail! [m]
-  (fs/writeSync 2 (str "kotobase-http-git-adapter: " m "\n"))
-  (.exit js/process 1))
+(defn fail! [m] (throw (ex-info m {})))
 
 (defn env [k] (aget (.-env js/process) k))
 
 (defn sha256-file [f]
-  (-> (crypto/createHash "sha256") (.update (fs/readFileSync f)) (.digest "hex")))
+  ;; Bundles can be large; keep the original adapter's bounded streaming hash.
+  (let [fd (fs/openSync f "r") hash (crypto/createHash "sha256") buf (js/Buffer.alloc 65536)]
+    (try
+      (loop []
+        (let [n (fs/readSync fd buf 0 (.-length buf) nil)]
+          (when (pos? n) (.update hash (.subarray buf 0 n)) (recur))))
+      (.digest hash "hex")
+      (finally (fs/closeSync fd)))))
 
 (defn run!
   "Run argv without a shell. `:in` is written to the child's stdin; `:out
@@ -42,7 +47,7 @@
 (defn auth-config []
   (let [auth (env "KOTOBA_GIT_AUTHORIZATION")]
     (when-not (and auth (not= "" (.trim auth))
-                   (not (re-find #"[\r\n\"]" auth)))
+                   (not (re-find #"[\x00-\x1f\x7f\"\\]" auth)))
       (fail! "KOTOBA_GIT_AUTHORIZATION is required and must be one safe header value"))
     ;; Header travels through curl stdin, not argv/process listings.
     (str "header = \"Authorization: " auth "\"\n")))
@@ -73,7 +78,8 @@
   (:out (run! ["git" "--git-dir" git-dir "for-each-ref"
                "--format=%(refname) %(objectname)"] {:out :string})))
 
-(let [[operation remote cache] *command-line-args*
+(try
+  (let [[operation remote cache] *command-line-args*
       url (endpoint remote)
       tmp-dir (fs/mkdtempSync (path/join (os/tmpdir) "kotobase-git-"))
       temp (path/join tmp-dir "repo.bundle")
@@ -85,7 +91,13 @@
                                        "--output" temp "--write-out" "%{http_code}" url]
                                       {:in (auth-config) :out :string})))]
         (cond
-          (= status "404") (when-not (has-head?) (run! ["git" "init" "--bare" cache]))
+          (= status "404")
+          (if-not (has-head?)
+            (run! ["git" "init" "--bare" cache])
+            ;; A missing or access-hidden remote is not permission to serve the
+            ;; previous credential's cached refs. Empty bootstrap caches remain OK.
+            (when (not= "" (.trim (refs-edn cache)))
+              (fail! "bundle fetch failed HTTP 404 (cached refs not served)")))
           (= status "200")
           (if (has-head?)
             (run! ["git" "--git-dir" cache "fetch" "--prune" temp "+refs/*:refs/*"])
@@ -107,5 +119,7 @@
                  "--request" "PUT" "--upload-file" temp url]
                 {:in config})))
       (fail! (str "unsupported operation: " operation)))
-    (catch :default e (fail! (ex-message e)))
     (finally (fs/rmSync tmp-dir #js {:recursive true :force true}))))
+  (catch :default e
+    (fs/writeSync 2 (str "kotobase-http-git-adapter: " (ex-message e) "\n"))
+    (set! (.-exitCode js/process) 1)))
