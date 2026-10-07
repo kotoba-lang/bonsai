@@ -58,12 +58,12 @@
   (reduce (fn [n i] (+ (* n 256) (nth v i))) 0 (range p (+ p 4))))
 
 (defn- entry-header [code size]
-  (loop [n (unsigned-bit-shift-right size 4)
-         out [(bit-or (bit-shift-left code 4) (bit-and size 0x0f))]]
+  (loop [n (quot size 16)
+         out [(+ (* code 16) (mod size 16))]]
     (if (zero? n)
       #?(:clj (byte-array (map unchecked-byte out)) :cljs out)
-      (recur (unsigned-bit-shift-right n 7)
-             (conj (update out (dec (count out)) bit-or 0x80) (bit-and n 0x7f))))))
+      (recur (quot n 128)
+             (conj (update out (dec (count out)) bit-or 0x80) (mod n 128))))))
 
 (defn- byte-count [b] #?(:clj (alength ^bytes b) :cljs (.-length b)))
 
@@ -93,6 +93,8 @@
            (let [n (.inflate z buf)]
              (when (and (zero? n) (or (.needsInput z) (.needsDictionary z)))
                (throw (ex-info "truncated pack zlib stream" {:reason :truncated-pack})))
+             (when (> (+ (.size out) n) expected-size)
+               (throw (ex-info "pack object size mismatch" {:reason :pack-size})))
              (.write out buf 0 n)))
          (let [body (.toByteArray out) consumed (- (- (alength ^bytes bytes) offset 20) (.getRemaining z))]
            (when-not (= expected-size (alength body))
@@ -123,36 +125,62 @@
          (throw (ex-info "pack object size mismatch" {:reason :pack-size})))
        [(ba bytes) end])))
 
+(defn- pack-byte [v p]
+  (when (>= p (count v))
+    (throw (ex-info "truncated pack entry" {:reason :truncated-pack})))
+  (nth v p))
+
 (defn- parse-header [v p]
-  (let [b0 (nth v p) code (bit-and (bit-shift-right b0 4) 7)]
-    (loop [b b0 q (inc p) shift 4 size (bit-and b0 0x0f)]
+  (let [b0 (pack-byte v p) code (bit-and (bit-shift-right b0 4) 7)]
+    (when-not (#{1 2 3 4 6 7} code)
+      (throw (ex-info "invalid pack object type" {:reason :pack-type :code code})))
+    ;; JS bit shifts coerce to int32 and wrap the shift count at 32. Use
+    ;; exact integer arithmetic, with the same portable bound on the JVM.
+    (loop [b b0 q (inc p) factor 16 size (bit-and b0 0x0f)]
       (if (zero? (bit-and b 0x80)) [code size q]
-          (let [b' (nth v q)]
-            (recur b' (inc q) (+ shift 7)
-                   (bit-or size (bit-shift-left (bit-and b' 0x7f) shift))))))))
+          (do (when (> factor 9007199254740991)
+                (throw (ex-info "pack size exceeds exact integer range" {:reason :pack-size})))
+            (let [b' (pack-byte v q)
+                  size' (+ size (* (bit-and b' 0x7f) factor))]
+              (when (> size' 9007199254740991)
+                (throw (ex-info "pack size exceeds exact integer range" {:reason :pack-size})))
+              (recur b' (inc q) (* factor 128) size')))))))
+
+(defn- offset-base [v p offset]
+  (loop [q p b (pack-byte v p) d (bit-and (pack-byte v p) 0x7f)]
+    (when (> d offset)
+      (throw (ex-info "invalid backward delta offset" {:reason :delta-base})))
+    (if (zero? (bit-and b 0x80))
+        (do (when (zero? d)
+              (throw (ex-info "invalid backward delta offset" {:reason :delta-base})))
+            [(- offset d) (inc q)])
+        (let [b' (pack-byte v (inc q))]
+          (recur (inc q) b' (+ (* (inc d) 128) (bit-and b' 0x7f)))))))
 
 (defn decode
   "Decode PACK v2, verify trailer, and resolve deltas. Returns objects in pack
    order with :offset/:type/:body/:oid."
   [pack]
   (let [pack (ba pack) v (vec (map u8 pack)) n (count v)]
+    (when (< n 32)
+      (throw (ex-info "truncated pack header or checksum" {:reason :truncated-pack})))
     (when-not (= "PACK" (apply str (map char (subvec v 0 (min 4 n)))))
       (throw (ex-info "bad pack magic" {:reason :pack-magic})))
     (when-not (= 2 (read-u32 v 4)) (throw (ex-info "unsupported pack version" {:reason :pack-version})))
     (when-not (= (vec (map u8 (sha1 (subvec v 0 (- n 20))))) (subvec v (- n 20) n))
       (throw (ex-info "pack checksum mismatch" {:reason :pack-checksum})))
-    (let [count (read-u32 v 8)]
+    (let [count (read-u32 v 8) data (subvec v 0 (- n 20))]
       (loop [i 0 p 12 out []]
         (if (= i count)
-          out
-          (let [offset p [code size q0] (parse-header v p)
+          (do (when-not (= p (- n 20))
+                (throw (ex-info "trailing pack data" {:reason :pack-trailing})))
+              out)
+          (let [offset p [code size q0] (parse-header data p)
                 [base-ref q] (cond
-                               (= code 7) [(mf/hexify (subvec v q0 (+ q0 20))) (+ q0 20)]
-                               (= code 6) (loop [q q0 b (nth v q0) d (bit-and (nth v q0) 0x7f)]
-                                            (if (zero? (bit-and b 0x80)) [(- offset d) (inc q)]
-                                                (let [b' (nth v (inc q))]
-                                                  (recur (inc q) b' (+ (bit-shift-left (inc d) 7)
-                                                                       (bit-and b' 0x7f))))))
+                               (= code 7) (do (when (> (+ q0 20) (- n 20))
+                                                (throw (ex-info "truncated delta base OID" {:reason :truncated-pack})))
+                                              [(mf/hexify (subvec data q0 (+ q0 20))) (+ q0 20)])
+                               (= code 6) (offset-base data q0 offset)
                                :else [nil q0])
                 [raw consumed] (inflate-at pack v q size)
                 base (when base-ref

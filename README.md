@@ -347,6 +347,28 @@ the three could start (`load-file` / `babashka.process` / `java.*` do not
 exist under nbb), and nothing noticed, because the only test that drove
 them ran on the JVM.
 
+Review qualification: the kbb helper runner passes 8 tests / 58 assertions,
+including incremental fetch, a binary object, actual HTTP bundle digest, Unicode
+repository-name encoding, padded refs, signal propagation and refusal before an
+unsupported service handshake. The original JVM test bodies remain under their
+`:clj` branch; they were not executed in this qualification. The repository
+suite now runs pack/loose-object conformance under kbb; private-repo still
+needs the synchronous-envelope portability follow-up.
+
+Pack review also covers actual Git-written REF_DELTA and OFS_DELTA packs and
+Git verification of Bonsai-generated indexes for both. Sizes use exact integer
+arithmetic up to 2^53 − 1, instead of JavaScript's wrapping 32-bit shifts.
+Malformed sizes, truncated entries/copy operands, reserved types and trailing
+pack data fail closed; delta output cannot exceed its declared result size.
+This qualification is kbb/Node, not a browser or an amu guest execution.
+
+HTTP adapter failures clean their temporary bundle files. Authorization values
+with control characters, quotes or backslashes are refused before curl runs.
+A remote 404 with nonempty cached refs fails rather than serving stale data;
+an empty bootstrap cache can still represent a new remote. Bundles are hashed
+in 64 KiB chunks. This verifies transport, not production signed-ref admission
+or a live service deployment.
+
 Unlike `kotoba-rad` (which pulls in JVM-only `ed25519.core`/`cacao.core`),
 `kotoba-git` has no non-portable dependency, so it runs real ClojureScript
 CI (`gen-shadow-cljs-edn.bb` resolves `shadow-cljs.edn`'s `:source-paths`
