@@ -92,6 +92,12 @@ identity, delegates, signed refs).
   GETs/PUTs Git bundles at `/git/v1/repos/<rid>/bundle`, supplies Authorization
   through curl stdin rather than argv, and binds uploads to a SHA-256 digest and
   complete ref projection. HTTP is restricted to an explicit loopback test.
+- **`bin/kotobase-private-git-adapter`** — the encrypted private-Git adapter
+  (`bonsai.private-remote`): the service sees two IPLD blocks and a head event,
+  never a bundle or a key. See *Private Git on kotobase.net* below.
+- **`bin/kotoba-git-recipient`** / **`bin/kotoba-biscuit-mint`** — the local
+  recipient key store (`bonsai.recipient-store`) and the service-token →
+  repository-Biscuit exchange the adapter reads its credential from.
 - **`bonsai.private-repo`** (composition layer; `envelope.seal-jvm` on the
   JVM, `envelope.seal-sync` on kbb) — seals a complete Git
   bundle with `kotoba-lang/envelope`, addresses randomized ciphertext as a raw
@@ -190,6 +196,83 @@ events, and acknowledge only after bundle and ref state are durably readable.
   standalone reusable API). Until it does, keep the live `db` value around
   yourself between restarts.
 
+## Private Git on kotobase.net
+
+`kotobase-private-git-adapter` is a `KOTOBA_GIT_ADAPTER` for
+`/git/v1/repos/:rid/private/{blocks,head}`
+(kotobase-api-gateway-cljs `kotobase.git-private-snapshot`):
+
+- **push**: `git bundle create --all` of the cache → `private/seal-snapshot`
+  (hybrid X25519 + ML-KEM-768, to this machine's recipient plus
+  `KOTOBA_GIT_RECIPIENTS`) → `PUT …/blocks/<descriptor-cid>` (DAG-CBOR) and
+  `PUT …/blocks/<ciphertext-cid>` (raw), each with `X-Kotoba-Git-Operation:
+  push` → `PUT …/head {snapshot_cid, operation "push", expected_heads}`.
+- **fetch**: `GET …/head` → `GET` both blocks → `restore-snapshot` (both CIDs,
+  canonical descriptor, repository, and the head event) → `open-snapshot` →
+  `git clone --mirror` / `git fetch --prune` from the bundle into the cache.
+- Every request carries `Authorization: Biscuit <token>` (the gateway reads
+  the scheme case-insensitively, `kotobase.biscuit-grant/header-token`), with
+  the token re-read from `KOTOBA_GIT_BISCUIT_FILE` per request — a Biscuit
+  lives 15 minutes and may be replaced mid-push. Never from argv.
+- **Concurrency is Git-shaped.** The cache records the tip it was fetched
+  from; a push names that tip as parent and `expected_heads`, so a remote that
+  moved in between refuses it (fetch, merge, push again). A head with several
+  tips — pushes the service kept apart instead of ordering — fails closed on
+  fetch and on push, naming the tips. No winner is picked.
+- Writer feeds, IPNS and IPNI advertisement are not sent (all optional on the
+  head PUT).
+- **Launching from any cwd**: the bin scripts are `#!/usr/bin/env kbb`
+  launchers. kbb resolves the project from the script's *real* path (a symlink
+  on `PATH` is fine, a copy is not), so `src/`, the pinned `:git/sha` deps
+  and their npm modules — installed by kbb under `~/.gitlibs` and put on
+  `NODE_PATH` — resolve wherever git starts the adapter. (Running them as
+  `kbb --backend sci --classpath …` is what loses `NODE_PATH`; don't.)
+- **CID hashing** runs on node:crypto's SHA-256, installed through
+  io-multiformats' `install-sha256!` seam, which proves it against the
+  portable digest before accepting it (and `bonsai.sha256-seam-test` pins the
+  golden CIDs through it). For a 17 MB bundle under kbb, measured 2026-10-07:
+  seal 52 ms, verify 29 ms, open 38 ms; with the portable digest the same
+  steps take 26 s, 52 s and 49 s.
+
+Operator setup (one machine; nothing secret in argv or shell history):
+
+```sh
+export PATH="/path/to/bonsai/bin:$PATH"
+
+# 1. recipient keys (once per machine): ~/.config/kotoba/rad/recipient.edn, 0600
+kotoba-git-recipient init          # prints only the public descriptor
+kotoba-git-recipient show          # the same, later; share it to be sealed to
+
+# 2. a repository Biscuit (15 min) from a kb_sa_ service token kept in a 0600 file
+export KOTOBA_SERVICE_TOKEN_FILE=~/.config/kotoba/rad/service-token
+export KOTOBA_TENANT_ID=<tenant id>
+export KOTOBA_GIT_REPOSITORY=rad:cloud-murakumo
+export KOTOBA_GIT_BISCUIT_FILE=~/.config/kotoba/rad/cloud-murakumo.biscuit
+kotoba-biscuit-mint                # POST https://auth.kotoba.cloud/v1/biscuit/token
+
+# 3. the remote
+export KOTOBA_GIT_CACHE=~/.cache/kotoba/git
+export KOTOBA_GIT_ADAPTER="$(command -v kotobase-private-git-adapter)"
+git remote add kotobase kotoba://kotobase.net/rad:cloud-murakumo
+git push kotobase main             # and: git clone kotoba://kotobase.net/rad:cloud-murakumo
+```
+
+**authn's `mutation-guard` does not reject this.** `POST /v1/biscuit/token`
+runs under `mutation-guard` (`authn/src/authn/worker.cljk`), which passes a
+request when `safe-browser-mutation?` holds, and that is true for *any*
+request carrying an authorization credential: `authorization-credential?` is
+`bearer-token` or `biscuit-token`, i.e. `Authorization: Bearer
+<[A-Za-z0-9._~-]{20,2048}>` (or `Biscuit <[A-Za-z0-9_-]{80,8192}>`). Only a
+request without one must be same-origin JSON (`Origin` equal to the authn
+audience or `https://<base-domain>` and `Content-Type` containing
+`application/json`). So a CLI needs no `Origin`. What it does need: the
+service token must be `kb_sa_…`, 40–256 characters
+(`enterprise/verify-service-token`), active, and of the tenant named in
+`tenantId` (`principal!`), and the requested permissions must be within the
+service account's (`biscuit/mint`: `grantable?`). A token that does not match
+the Bearer pattern falls through to the browser check and gets
+`403 same-origin application/json request required`.
+
 ## Usage
 
 ```clojure
@@ -239,6 +322,16 @@ JVM-free backend of `kotoba-lang/envelope` (same wire format as
 X25519 + ML-KEM-768 recipients (`seal-snapshot` with `:kem
 :x25519+ml-kem-768`); the JVM refuses a hybrid snapshot rather than sealing it
 classically.
+
+`test/private_git_adapter_test.cljk` drives the private adapter end to end
+with real `git` against `test/private_git_stub.cljk`, a child-process stub of
+`/private/{blocks,head}` that validates with `bonsai.private-wire` as the
+gateway does: push, clone, incremental push, a stale push refused, two racing
+pushes left as two tips (the adapter refuses them), a key that was not sealed
+to, a tampered block (refused by the stub, and by the client when a stub
+serves it anyway), a wrong Biscuit, the key store, and `kotoba-biscuit-mint`
+against a local authn stub. Nothing contacts kotobase.net or
+auth.kotoba.cloud.
 
 The `bin/` scripts (`git-remote-kotoba` and both adapters) run under kbb,
 which is nbb — JVM-free — so they are tested there, end to end with real
