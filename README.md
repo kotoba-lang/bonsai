@@ -261,8 +261,16 @@ Review qualification: the kbb helper runner passes 8 tests / 58 assertions,
 including incremental fetch, a binary object, actual HTTP bundle digest, Unicode
 repository-name encoding, padded refs, signal propagation and refusal before an
 unsupported service handshake. The original JVM test bodies remain under their
-`:clj` branch; they were not executed in this qualification. The full repository
-suite still needs the pack/private-repo portability follow-ups.
+`:clj` branch; they were not executed in this qualification. The repository
+suite now runs pack/loose-object conformance under kbb; private-repo still
+needs the synchronous-envelope portability follow-up.
+
+Pack review also covers actual Git-written REF_DELTA and OFS_DELTA packs and
+Git verification of Bonsai-generated indexes for both. Sizes use exact integer
+arithmetic up to 2^53 − 1, instead of JavaScript's wrapping 32-bit shifts.
+Malformed sizes, truncated entries/copy operands, reserved types and trailing
+pack data fail closed; delta output cannot exceed its declared result size.
+This qualification is kbb/Node, not a browser or an amu guest execution.
 
 HTTP adapter failures clean their temporary bundle files. Authorization values
 with control characters, quotes or backslashes are refused before curl runs.
