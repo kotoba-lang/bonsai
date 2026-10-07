@@ -12,19 +12,19 @@
   injected, so GitHub, Radicle, and git.kotobase.net are adapters rather than
   semantic dependencies.
 
-  JVM-only, for one reason that is not in this file: `envelope.seal-jvm` -- the
-  synchronous envelope backend everything here is written against -- has no
-  :cljs body yet, and `envelope.seal`, the ClojureScript one, is Web Crypto and
-  answers Promises. Adopting it would turn every function below into a Promise
-  on cljs and change this namespace's API, so it waits for a synchronous
-  portable backend in kotoba-lang/envelope (the capability belongs there, not
-  re-implemented here). Everything else in this file is already portable:
-  byte length, byte equality and the epoch-key parse do not reach for Java,
-  and `bonsai.private-wire`, the storage-side validator, runs on kbb today."
+  The envelope bytes come from `envelope.seal-jvm` on the JVM and from
+  `envelope.seal-sync` on kbb (nbb) -- the same wire format, both synchronous,
+  so every function here keeps one signature on both hosts. (`envelope.seal`,
+  the browser backend, answers Promises and is not used here.) A snapshot is
+  classical X25519 by default; `seal-snapshot` with `:kem
+  :x25519+ml-kem-768` wraps the content key to hybrid recipients
+  (`{:id :pub :pq-pub}`), which only the kbb backend can do today, and such a
+  snapshot is opened with `{:priv :pq-priv}` as the private key."
   (:require [biscuit.authorizer :as biscuit]
             [bonsai.private-wire :as wire]
             [envelope.model :as envelope]
-            [envelope.seal-jvm :as seal]
+            #?(:clj [envelope.seal-jvm :as seal]
+               :cljs [envelope.seal-sync :as seal])
             [ipld.core :as ipld]
             [ipni.ad :as ipni-ad]
             [ipni.metadata :as ipni-metadata]
@@ -112,10 +112,11 @@
 
 (defn seal-snapshot
   "Seal one complete Git bundle. `recipients` are envelope recipient maps
-  `{:id did :pub x25519-public-key}`. Returns ciphertext plus an IPLD
+  `{:id did :pub x25519-public-key}`, plus `:pq-pub` (ML-KEM-768) each when
+  `kem` is `:x25519+ml-kem-768`. Returns ciphertext plus an IPLD
   descriptor; callers may persist both under their returned CIDs."
-  [{:keys [rid epoch parent bundle-bytes recipients]
-    :or {epoch 0}}]
+  [{:keys [rid epoch parent bundle-bytes recipients kem]
+    :or {epoch 0 kem :x25519}}]
   (when-not (wire/valid-rid? rid)
     (throw (ex-info "invalid repository id" {:reason :invalid-rid :rid rid})))
   (when-not (nat-int? epoch)
@@ -127,10 +128,20 @@
   (when-not (seq recipients)
     (throw (ex-info "a private snapshot requires at least one recipient"
                     {:reason :no-recipients})))
+  (when-not (contains? #{:x25519 :x25519+ml-kem-768} kem)
+    (throw (ex-info "unsupported snapshot KEM" {:reason :invalid-kem :kem kem})))
+  #?(:clj
+     ;; envelope.seal-jvm has no hybrid wrap: it would put classical entries
+     ;; in a hybrid envelope, a descriptor bonsai.private-wire then rejects.
+     ;; Refuse here, before any key is generated, rather than emit one.
+     (when (= :x25519+ml-kem-768 kem)
+       (throw (ex-info "hybrid snapshots need envelope.seal-sync (kbb); envelope.seal-jvm cannot wrap them"
+                       {:reason :hybrid-unsupported-on-jvm :kem kem}))))
   (let [{:keys [envelope chunks]}
         (seal/seal-object (str "bonsai:" rid) [bundle-bytes] recipients
                           {:envelope/nonce-epoch epoch
-                           :envelope/chunk-epochs {0 epoch}})]
+                           :envelope/chunk-epochs {0 epoch}
+                           :envelope/kem kem})]
     (assemble rid epoch parent envelope (first chunks))))
 
 (defn restore-snapshot
@@ -192,11 +203,14 @@
     (throw (ex-info "revoked recipient is still in the next epoch"
                     {:reason :recipient-still-granted :recipient revoked-recipient-id})))
   (let [bundle (open-snapshot snapshot opener-id opener-private-key)
+        ;; The next epoch keeps the KEM: rotating a hybrid snapshot must
+        ;; not quietly hand the new content key to classical wraps.
         rotated (seal-snapshot {:rid (:snapshot/rid snapshot)
                                 :epoch (inc (:snapshot/epoch snapshot))
                                 :parent (:snapshot/cid snapshot)
                                 :bundle-bytes bundle
-                                :recipients recipients})]
+                                :recipients recipients
+                                :kem (:envelope/kem (:snapshot/envelope snapshot))})]
     (when (= (:snapshot/ciphertext-cid snapshot)
              (:snapshot/ciphertext-cid rotated))
       (throw (ex-info "content-key rotation reused ciphertext identity"

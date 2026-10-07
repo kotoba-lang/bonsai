@@ -92,8 +92,8 @@ identity, delegates, signed refs).
   GETs/PUTs Git bundles at `/git/v1/repos/<rid>/bundle`, supplies Authorization
   through curl stdin rather than argv, and binds uploads to a SHA-256 digest and
   complete ref projection. HTTP is restricted to an explicit loopback test.
-- **`bonsai.private-repo`** (JVM composition layer; the one namespace that
-  does not run under kbb yet — see Testing) — seals a complete Git
+- **`bonsai.private-repo`** (composition layer; `envelope.seal-jvm` on the
+  JVM, `envelope.seal-sync` on kbb) — seals a complete Git
   bundle with `kotoba-lang/envelope`, addresses randomized ciphertext as a raw
   IPLD CID, and addresses the recipient-scoped descriptor as DAG-CBOR. Sharing
   re-wraps the existing content key without touching ciphertext; revocation is
@@ -233,15 +233,12 @@ npm install && npm run test:cljs   # real ClojureScript (shadow-cljs node-test),
 
 `kbb` is nbb — there is no JVM under it — and `kbb -M:test` runs the whole
 suite, real-`git` conformance included (`kotoba.process` is spawnSync there).
-Two namespaces print `SKIP … on cljs (kbb)` and define no tests:
-`bonsai.private-repo-test` and `bonsai.private-wire-test`, because
-`bonsai.private-repo` is written against `envelope.seal-jvm`, whose body is
-`:clj`-only. The ClojureScript `envelope.seal` answers Promises (Web Crypto
-has no synchronous AES-GCM or HKDF), so adopting it would change
-`bonsai.private-repo`'s API; the fix is a synchronous portable seal backend
-in `kotoba-lang/envelope`, a crypto-provider decision that belongs there. The
-storage-side wire contract, `bonsai.private-wire`, already runs under kbb
-(`bonsai.private-wire-portable-test`).
+`bonsai.private-repo` runs there on `envelope.seal-sync`, the synchronous
+JVM-free backend of `kotoba-lang/envelope` (same wire format as
+`envelope.seal-jvm` and the browser's `envelope.seal`), which also wraps hybrid
+X25519 + ML-KEM-768 recipients (`seal-snapshot` with `:kem
+:x25519+ml-kem-768`); the JVM refuses a hybrid snapshot rather than sealing it
+classically.
 
 The `bin/` scripts (`git-remote-kotoba` and both adapters) run under kbb,
 which is nbb — JVM-free — so they are tested there, end to end with real
