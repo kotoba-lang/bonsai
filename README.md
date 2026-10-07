@@ -225,6 +225,34 @@ kbb -M:local:test    # against sibling checkouts in ../ (same-monorepo dev)
 npm install && npm run test:cljs   # real ClojureScript (shadow-cljs node-test), not just .cljc-named
 ```
 
+The `bin/` scripts (`git-remote-kotoba` and both adapters) run under kbb,
+which is nbb — JVM-free — so they are tested there, end to end with real
+`git`, by their own runner:
+
+```
+kbb --backend sci --classpath "src:test:$(kbb -Spath)" test/run_remote_helper.cljk
+```
+
+They were babashka scripts until `204c18e` rewrote their shebangs from `bb`
+to `kbb` without porting them; from then until this runner existed none of
+the three could start (`load-file` / `babashka.process` / `java.*` do not
+exist under nbb), and nothing noticed, because the only test that drove
+them ran on the JVM.
+
+Review qualification: the kbb helper runner passes 8 tests / 58 assertions,
+including incremental fetch, a binary object, actual HTTP bundle digest, Unicode
+repository-name encoding, padded refs, signal propagation and refusal before an
+unsupported service handshake. The original JVM test bodies remain under their
+`:clj` branch; they were not executed in this qualification. The full repository
+suite still needs the pack/private-repo portability follow-ups.
+
+HTTP adapter failures clean their temporary bundle files. Authorization values
+with control characters, quotes or backslashes are refused before curl runs.
+A remote 404 with nonempty cached refs fails rather than serving stale data;
+an empty bootstrap cache can still represent a new remote. Bundles are hashed
+in 64 KiB chunks. This verifies transport, not production signed-ref admission
+or a live service deployment.
+
 Unlike `kotoba-rad` (which pulls in JVM-only `ed25519.core`/`cacao.core`),
 `kotoba-git` has no non-portable dependency, so it runs real ClojureScript
 CI (`gen-shadow-cljs-edn.bb` resolves `shadow-cljs.edn`'s `:source-paths`
