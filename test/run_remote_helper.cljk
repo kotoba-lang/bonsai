@@ -4,8 +4,8 @@
 ;;
 ;;   kbb --backend sci --classpath "src:test:$(kbb -Spath)" test/run_remote_helper.cljk
 ;;
-;; Separate from `kbb -M:test` because that loads every test namespace, and
-;; several (pack, private-repo, ...) are still JVM-only.
+;; `kbb -M:test` runs these too, with the rest of the suite; this runner is
+;; the fast path when only bin/ and bonsai.remote-helper changed.
 (require '[cljs.test :as t]
          '[remote-helper-test])
 
