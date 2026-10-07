@@ -1,5 +1,5 @@
 (ns bonsai.git-codec-test
-  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] #?(:clj [clojure.java.shell :as shell])
+  (:require [kotoba.bytes :as kbytes] [kotoba.io :as kio] [kotoba.process :as shell]
             [bonsai.git-codec :as codec]
             [bonsai.git-object :as object]
             [kotoba.test :refer [deftest is testing]]))
@@ -26,30 +26,30 @@
         decoded (codec/decode-commit (codec/encode-commit commit))]
     (is (= commit decoded))))
 
-#?(:clj
-   (deftest typed-bodies-conform-to-git
-     (testing "tree body and git mktree produce the same OID"
-       (let [body (codec/encode-tree [{:mode "100644" :name "hello.txt" :oid blob-oid}])
-             ours (object/object-oid "tree" body)
-             dir (kio/temp-dir
-                           "bonsai-tree-")]
-         (try
-           (is (zero? (:exit (shell/sh "git" "init" "--bare" (.getPath dir)))))
-           (let [{:keys [exit out err]}
-                 (shell/sh "git" (str "--git-dir=" (.getPath dir)) "mktree" "--missing"
-                           :in (str "100644 blob " blob-oid "\thello.txt\n"))]
-             (is (zero? exit) err)
-             (is (= (.trim ^String out) ours)))
-           (finally
-             (doseq [f (reverse (file-seq dir))] (.delete ^java.io.File f))))))
-     (testing "git hash-object accepts the exact typed commit body"
-       (let [body (codec/encode-commit
-                   {:tree empty-tree-oid :parents []
-                    :author "Alice <alice@example.test> 1700000000 +0900"
-                    :committer "Alice <alice@example.test> 1700000000 +0900"
-                    :message "initial\n"})
-             ours (object/object-oid "commit" body)
-             {:keys [exit out err]} (shell/sh "git" "hash-object" "-t" "commit" "--stdin"
-                                                   :in (kbytes/utf8-string ^bytes body))]
-         (is (zero? exit) err)
-         (is (= (.trim ^String out) ours))))))
+;; Installed git is the oracle on every runtime (kotoba.process is
+;; ProcessBuilder on the JVM and spawnSync on kbb), not only the JVM.
+(deftest typed-bodies-conform-to-git
+  (testing "tree body and git mktree produce the same OID"
+    (let [body (codec/encode-tree [{:mode "100644" :name "hello.txt" :oid blob-oid}])
+          ours (object/object-oid "tree" body)
+          dir (kio/temp-dir "bonsai-tree-")]
+      (try
+        (is (zero? (:exit (shell/sh "git" "init" "--bare" (kio/path dir)))))
+        (let [{:keys [exit out err]}
+              (shell/sh "git" (str "--git-dir=" (kio/path dir)) "mktree" "--missing"
+                        :in (str "100644 blob " blob-oid "\thello.txt\n"))]
+          (is (zero? exit) err)
+          (is (= (.trim ^String out) ours)))
+        (finally
+          (doseq [f (reverse (kio/file-seq dir))] (kio/delete f))))))
+  (testing "git hash-object accepts the exact typed commit body"
+    (let [body (codec/encode-commit
+                {:tree empty-tree-oid :parents []
+                 :author "Alice <alice@example.test> 1700000000 +0900"
+                 :committer "Alice <alice@example.test> 1700000000 +0900"
+                 :message "initial\n"})
+          ours (object/object-oid "commit" body)
+          {:keys [exit out err]} (shell/sh "git" "hash-object" "-t" "commit" "--stdin"
+                                           :in (kbytes/utf8-string body))]
+      (is (zero? exit) err)
+      (is (= (.trim ^String out) ours)))))

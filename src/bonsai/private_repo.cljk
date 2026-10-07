@@ -10,7 +10,17 @@
   which ref is canonical: signed `nekko.ref-event` policy remains that authority.
   Storage, HTTP, IPNI transport, clocks, keys, and token issuance are deliberately
   injected, so GitHub, Radicle, and git.kotobase.net are adapters rather than
-  semantic dependencies."
+  semantic dependencies.
+
+  JVM-only, for one reason that is not in this file: `envelope.seal-jvm` -- the
+  synchronous envelope backend everything here is written against -- has no
+  :cljs body yet, and `envelope.seal`, the ClojureScript one, is Web Crypto and
+  answers Promises. Adopting it would turn every function below into a Promise
+  on cljs and change this namespace's API, so it waits for a synchronous
+  portable backend in kotoba-lang/envelope (the capability belongs there, not
+  re-implemented here). Everything else in this file is already portable:
+  byte length, byte equality and the epoch-key parse do not reach for Java,
+  and `bonsai.private-wire`, the storage-side validator, runs on kbb today."
   (:require [biscuit.authorizer :as biscuit]
             [bonsai.private-wire :as wire]
             [envelope.model :as envelope]
@@ -24,10 +34,12 @@
 (def operations wire/operations)
 
 (defn- byte-count [bytes]
-  (alength ^bytes bytes))
+  #?(:clj (alength ^bytes bytes) :cljs (.-length bytes)))
 
 (defn- same-bytes? [a b]
-  (java.util.Arrays/equals ^bytes a ^bytes b))
+  #?(:clj (java.util.Arrays/equals ^bytes a ^bytes b)
+     :cljs (and (= (.-length a) (.-length b))
+                (every? #(= (aget a %) (aget b %)) (range (.-length a))))))
 
 (defn- kw-name [x]
   (when x (name x)))
@@ -76,7 +88,7 @@
    :envelope/chunk-bytes (get env "chunkBytes")
    :envelope/chunks (get env "chunks")
    :envelope/nonce-epoch (get env "nonceEpoch")
-   :envelope/chunk-epochs (into {} (map (fn [[k v]] [(Long/parseLong k) v]))
+   :envelope/chunk-epochs (into {} (map (fn [[k v]] [#?(:clj (Long/parseLong k) :cljs (js/parseInt k 10)) v]))
                                 (get env "chunkEpochs"))
    :envelope/recipients (mapv wire->recipient (get env "recipients"))})
 

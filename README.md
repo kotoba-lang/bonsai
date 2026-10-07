@@ -63,16 +63,21 @@ identity, delegates, signed refs).
   framed bytes under a raw CID, and projects the verified OID↔CID bridge into
   the same arrangement db. Reads recompute CID, OID, framing, declared size,
   and bridge membership before returning bytes. Golden blob vectors and live
-  `git hash-object` conformance tests pin JVM behavior; the same golden vectors
-  run under real compiled ClojureScript/Node.
+  `git hash-object` conformance tests run on the JVM and under kbb alike; on
+  ClojureScript the OID is pure `kotoba.bytes.sha1`, not Node's `crypto`.
 - **`bonsai.git-codec`** — typed Git tree and commit body codecs with canonical
   modes, raw SHA-1 names, Git ordering, ordered parents, exact identities,
   continuation headers, and messages; checked against real Git.
 - **`bonsai.loose-object`** — bounded zlib encode/decode for complete loose
-  object files. Git reads codec output directly from `.git/objects`.
-- **`bonsai.pack`** (JVM) and **`bonsai.delta`** — PACK v2 write/read,
+  object files. Git reads codec output directly from `.git/objects`, and the
+  decoder reads what `git hash-object -w` writes. On ClojureScript the zlib is
+  `org-ietf-deflate`, not Node's `zlib`.
+- **`bonsai.pack`** and **`bonsai.delta`** — PACK v2 write/read,
   OFS/REF delta resolution, delta application, and idx v2 generation with
-  fanout, CRC32, offsets, and checksums. Output passes `git verify-pack`.
+  fanout, CRC32, offsets, and checksums. Output passes `git verify-pack`, and
+  a pack `git pack-objects` writes (deltas included) decodes to git's OIDs.
+  On ClojureScript SHA-1, CRC-32 and inflate are the pure `kotoba.bytes.sha1`
+  and `org-ietf-deflate`.
 - **`bin/git-remote-kotoba`** — executable remote helper using Git's `connect`
   capability for upload-pack/receive-pack. Local URLs open a bare repo directly;
   `kotoba://` URLs use an isolated SHA-256-keyed cache plus the explicit
@@ -87,7 +92,8 @@ identity, delegates, signed refs).
   GETs/PUTs Git bundles at `/git/v1/repos/<rid>/bundle`, supplies Authorization
   through curl stdin rather than argv, and binds uploads to a SHA-256 digest and
   complete ref projection. HTTP is restricted to an explicit loopback test.
-- **`bonsai.private-repo`** (JVM composition layer) — seals a complete Git
+- **`bonsai.private-repo`** (JVM composition layer; the one namespace that
+  does not run under kbb yet — see Testing) — seals a complete Git
   bundle with `kotoba-lang/envelope`, addresses randomized ciphertext as a raw
   IPLD CID, and addresses the recipient-scoped descriptor as DAG-CBOR. Sharing
   re-wraps the existing content key without touching ciphertext; revocation is
@@ -225,6 +231,18 @@ kbb -M:local:test    # against sibling checkouts in ../ (same-monorepo dev)
 npm install && npm run test:cljs   # real ClojureScript (shadow-cljs node-test), not just .cljc-named
 ```
 
+`kbb` is nbb — there is no JVM under it — and `kbb -M:test` runs the whole
+suite, real-`git` conformance included (`kotoba.process` is spawnSync there).
+Two namespaces print `SKIP … on cljs (kbb)` and define no tests:
+`bonsai.private-repo-test` and `bonsai.private-wire-test`, because
+`bonsai.private-repo` is written against `envelope.seal-jvm`, whose body is
+`:clj`-only. The ClojureScript `envelope.seal` answers Promises (Web Crypto
+has no synchronous AES-GCM or HKDF), so adopting it would change
+`bonsai.private-repo`'s API; the fix is a synchronous portable seal backend
+in `kotoba-lang/envelope`, a crypto-provider decision that belongs there. The
+storage-side wire contract, `bonsai.private-wire`, already runs under kbb
+(`bonsai.private-wire-portable-test`).
+
 The `bin/` scripts (`git-remote-kotoba` and both adapters) run under kbb,
 which is nbb — JVM-free — so they are tested there, end to end with real
 `git`, by their own runner:
@@ -243,8 +261,16 @@ Review qualification: the kbb helper runner passes 8 tests / 58 assertions,
 including incremental fetch, a binary object, actual HTTP bundle digest, Unicode
 repository-name encoding, padded refs, signal propagation and refusal before an
 unsupported service handshake. The original JVM test bodies remain under their
-`:clj` branch; they were not executed in this qualification. The full repository
-suite still needs the pack/private-repo portability follow-ups.
+`:clj` branch; they were not executed in this qualification. The repository
+suite now runs pack/loose-object conformance under kbb; private-repo still
+needs the synchronous-envelope portability follow-up.
+
+Pack review also covers actual Git-written REF_DELTA and OFS_DELTA packs and
+Git verification of Bonsai-generated indexes for both. Sizes use exact integer
+arithmetic up to 2^53 − 1, instead of JavaScript's wrapping 32-bit shifts.
+Malformed sizes, truncated entries/copy operands, reserved types and trailing
+pack data fail closed; delta output cannot exceed its declared result size.
+This qualification is kbb/Node, not a browser or an amu guest execution.
 
 HTTP adapter failures clean their temporary bundle files. Authorization values
 with control characters, quotes or backslashes are refused before curl runs.

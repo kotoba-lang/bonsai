@@ -1,7 +1,14 @@
 (ns bonsai.loose-object
-  "Git loose-object zlib envelope over bonsai.git-object framing."
+  "Git loose-object zlib envelope over bonsai.git-object framing.
+
+   The :cljs branch is org-ietf-deflate, not Node's zlib: the same pure
+   RFC 1950/1951 code on kbb, in a browser and under amu, where `zlib` the
+   Node module does not exist. Git reads any conforming zlib stream, so the
+   compressed bytes need not match what java.util.zip.Deflater emits -- an
+   object's identity is its framed bytes, never its compressed ones -- and
+   the decoder is strict in the same places the JVM branch is."
   (:require [bonsai.git-object :as object]
-            #?(:cljs ["zlib" :as zlib])))
+            #?(:cljs [deflate.zlib :as zlib])))
 
 (def default-max-inflated-bytes (* 64 1024 1024))
 
@@ -23,7 +30,7 @@
            (let [n (.deflate z buf)] (.write out buf 0 n)))
          (.toByteArray out)
          (finally (.end z))))
-     :cljs (js/Uint8Array. (zlib/deflateSync (js/Buffer.from (->bytes bytes))))))
+     :cljs (js/Uint8Array.from (clj->js (zlib/wrap (->bytes bytes))))))
 
 (defn inflate
   "Strictly inflate one zlib stream, bounded against decompression bombs."
@@ -63,15 +70,32 @@
                             {:reason :invalid-zlib} e)))
           (finally (.end z))))
       :cljs
-      (let [out (try
-                  (zlib/inflateSync (js/Buffer.from (->bytes bytes))
-                                    #js {:maxOutputLength max-bytes})
-                  (catch :default e
-                    (throw (ex-info "invalid or oversized Git loose object"
-                                    {:reason (if (= "ERR_BUFFER_TOO_LARGE" (.-code e))
-                                               :inflated-limit :invalid-zlib)
-                                     :limit max-bytes} e))))]
-        (js/Uint8Array. out)))))
+      ;; unwrap* rather than unwrap: :end says where the stream stopped, which
+      ;; is how trailing bytes are told apart from a clean end -- Inflater's
+      ;; getRemaining on the JVM. Each deflate.* :reason maps onto the one the
+      ;; JVM branch reports for the same defect.
+      (let [{out :bytes end :end}
+            (try
+              (zlib/unwrap* (->bytes bytes) {:max-output max-bytes})
+              (catch :default e
+                (let [reason (:reason (ex-data e))]
+                  (throw (case reason
+                           :output-limit
+                           (ex-info "inflated Git object exceeds limit"
+                                    {:reason :inflated-limit :limit max-bytes} e)
+                           :dictionary-required
+                           (ex-info "Git loose object requires a zlib dictionary"
+                                    {:reason :zlib-dictionary} e)
+                           :truncated
+                           (ex-info "truncated Git loose object"
+                                    {:reason :truncated-zlib} e)
+                           (ex-info "invalid Git loose object zlib data"
+                                    {:reason :invalid-zlib :deflate/reason reason} e))))))
+            remaining (- (.-length (->bytes bytes)) end)]
+        (when-not (zero? remaining)
+          (throw (ex-info "trailing bytes after Git loose object"
+                          {:reason :trailing-zlib :remaining remaining})))
+        (js/Uint8Array.from (clj->js out))))))
 
 (defn encode
   "Encode type/body into a complete zlib Git loose-object file."
