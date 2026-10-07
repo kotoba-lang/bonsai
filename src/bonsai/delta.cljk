@@ -7,14 +7,31 @@
      :cljs (js/Uint8Array. (clj->js xs))))
 
 (defn- read-varint [bytes offset]
-  (loop [p offset shift 0 value 0]
+  (loop [p offset factor 1 value 0]
     (when (>= p (count bytes))
       (throw (ex-info "truncated Git delta varint" {:reason :truncated-delta})))
+    (when (> factor 9007199254740991)
+      (throw (ex-info "Git delta size exceeds exact integer range" {:reason :delta-size})))
     (let [b (u8 (nth bytes p))
-          value (bit-or value (bit-shift-left (bit-and b 0x7f) shift))]
+          value (+ value (* (bit-and b 0x7f) factor))]
+      (when (> value 9007199254740991)
+        (throw (ex-info "Git delta size exceeds exact integer range" {:reason :delta-size})))
       (if (zero? (bit-and b 0x80))
         [value (inc p)]
-        (recur (inc p) (+ shift 7) value)))))
+        (recur (inc p) (* factor 128) value)))))
+
+(defn- copy-field [delta op p masks]
+  (reduce (fn [[value q] [mask factor]]
+            (if (zero? (bit-and op mask))
+              [value q]
+              (do (when (>= q (count delta))
+                    (throw (ex-info "truncated Git delta copy" {:reason :truncated-delta})))
+                  [(+ value (* (nth delta q) factor)) (inc q)])))
+          [0 p] masks))
+
+(defn- check-output [out n result-size]
+  (when (> (+ (count out) n) result-size)
+    (throw (ex-info "Git delta exceeds declared result size" {:reason :delta-result-size}))))
 
 (defn apply-delta
   "Apply Git delta instruction bytes to base bytes, verifying declared base
@@ -43,24 +60,19 @@
             (let [n op end (+ (inc p) n)]
               (when (> end (count delta))
                 (throw (ex-info "truncated Git delta insert" {:reason :truncated-delta})))
+              (check-output out n result-size)
               (recur end (into out (subvec delta (inc p) end))))
 
             :else
-            (let [[offset p] (reduce (fn [[v q] [mask shift]]
-                                       (if (zero? (bit-and op mask))
-                                         [v q]
-                                         [(bit-or v (bit-shift-left (nth delta q) shift)) (inc q)]))
-                                     [0 (inc p)] [[0x01 0] [0x02 8] [0x04 16] [0x08 24]])
-                  [size p] (reduce (fn [[v q] [mask shift]]
-                                     (if (zero? (bit-and op mask))
-                                       [v q]
-                                       [(bit-or v (bit-shift-left (nth delta q) shift)) (inc q)]))
-                                   [0 p] [[0x10 0] [0x20 8] [0x40 16]])
+            (let [[offset p] (copy-field delta op (inc p)
+                                         [[0x01 1] [0x02 256] [0x04 65536] [0x08 16777216]])
+                  [size p] (copy-field delta op p [[0x10 1] [0x20 256] [0x40 65536]])
                   size (if (zero? size) 0x10000 size)
                   end (+ offset size)]
               (when (> end (count base))
                 (throw (ex-info "Git delta copy exceeds base"
                                 {:reason :delta-copy-bounds :offset offset :size size})) )
+              (check-output out size result-size)
               (recur p (into out (subvec base offset end))))))))))
 
 (defn literal-delta

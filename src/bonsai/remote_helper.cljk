@@ -119,7 +119,7 @@
         exit #?(:clj (:exit @(process/process [service p]
                                               {:in :inherit :out :inherit :err :inherit}))
                 :cljs (let [r (cp/spawnSync service #js [p] #js {:stdio "inherit"})]
-                        (if (.-error r) 128 (.-status r))))]
+                        (if (and (not (.-error r)) (number? (.-status r))) (.-status r) 128)))]
     (when (and (zero? exit) (= service "git-receive-pack")
                (network-remote? url))
       (run-adapter! (:adapter opts) "push" url p))
@@ -159,6 +159,8 @@
                      ;; Materialization must finish before accepting connect.
                      ;; From this empty response onward stdin/stdout are
                      ;; exclusively the Git byte stream.
+                     _ (when-not (contains? services service)
+                         (throw (ex-info "unsupported Git service" {:reason :unsupported-service})))
                      p (prepare! url opts)]
                  (out! "\n")
                  (connect! service url (assoc opts :prepared-path p)))
