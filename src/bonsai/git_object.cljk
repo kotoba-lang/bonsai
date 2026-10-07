@@ -8,7 +8,7 @@
    bridge can be rebuilt and independently verified."
   (:require [kotoba.bytes :as kbytes] [arrangement.core :as arr]
             [multiformats.core :as mf]
-            #?(:cljs ["crypto" :as crypto])))
+            #?(:cljs [kotoba.bytes.sha1 :as sha1])))
 
 (def object-types #{"blob" "tree" "commit" "tag"})
 
@@ -77,12 +77,17 @@
         {:type type :size size :body (->bytes (drop (inc nul) framed))}))))
 
 (defn oid
-  "Lowercase 40-hex Git SHA-1 OID of already-framed bytes."
+  "Lowercase 40-hex Git SHA-1 OID of already-framed bytes.
+
+   cljs uses kotoba.bytes.sha1 (pure FIPS 180-4), not Node's `crypto`: the
+   OID is the Git half of the OID<->CID bridge, and multiformats already
+   computes the CID half with pure SHA-256 on every host, so both identities
+   now come from definitions that run wherever the bridge does -- kbb, a
+   browser, an amu guest -- rather than only where Node's OpenSSL is linked."
   [framed]
   #?(:clj (mf/hexify (.digest (java.security.MessageDigest/getInstance "SHA-1")
                               ^bytes (->bytes framed)))
-     :cljs (.digest (.update (crypto/createHash "sha1")
-                             (js/Buffer.from (->bytes framed))) "hex")))
+     :cljs (mf/hexify (sha1/sha1-bytes (vec (->bytes framed))))))
 
 (defn object-oid [type body]
   (oid (frame type body)))
