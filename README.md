@@ -18,6 +18,10 @@ identity, delegates, signed refs).
 
 ## What this is
 
+The B2 Git-command adapter and its cache/authority boundaries are documented in
+[docs/b2-git.md](docs/b2-git.md). It uses `kotoba-b2://BUCKET/GENESIS-CID`, the
+existing Git transport bridge, Bonsai object codecs and Nekko signed ref events.
+
 - **`bonsai.repo`** — `empty-repo` (a fresh `arrangement` db) and
   `persist!` (snapshot the *whole* repo — objects and refs together — to
   durable storage via `arrangement.core/commit!`). A repo is one db;
@@ -189,12 +193,10 @@ events, and acknowledge only after bundle and ref state are durably readable.
   (ADR-2607022600 flags "Datalog fixpoint" as a follow-up) — `ancestors`/
   `log`/`missing-since` still walk the DAG by hand rather than expressing
   reachability as one Datalog query.
-- **No restore-from-persisted-snapshot.** `repo/persist!` writes a snapshot
-  CID via `arrangement.core/commit!`; `arrangement` does not yet expose a
-  public "rehydrate a db from a snapshot CID" counterpart (that logic
-  lives inside `kotobase-peer`'s own `fold!`/`cold-datoms`, not as a
-  standalone reusable API). Until it does, keep the live `db` value around
-  yourself between restarts.
+- **Whole-db restore is available.** `repo/restore` wraps
+  `arrangement.core/restore` to recover objects and refs from a persisted
+  snapshot CID. This materializes the complete db; it is distinct from the
+  B2 Git adapter's filtered-clone and lazy blob retrieval.
 
 ## Private Git on kotobase.net
 

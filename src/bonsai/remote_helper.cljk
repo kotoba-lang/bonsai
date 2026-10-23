@@ -126,7 +126,7 @@
     exit))
 
 #?(:cljs
-   (defn- read-line!
+   (defn read-line!
      "One protocol line from fd 0, without reading past its newline. nil at EOF."
      []
      (let [buf (js/Buffer.alloc 1)]
