@@ -295,9 +295,10 @@
       (require! (.isDirectory (fs/statSync gd)) "Client Git control path is not a directory")
       (require! (not (.startsWith (fs/realpathSync gd) (str (get (:profile ep) "mount") "/")))
                 "Put Git control files on APFS: use git kotoba-b2 init/clone or --separate-git-dir")
-      ;; Git upload-pack does not hydrate missing wants before validating a
-      ;; blob-only fetch. A separate fetch-capability promisor helper writes
-      ;; the verified blob directly to the client's object store instead.
+      ;; A direct fetch-capability promisor helper avoids re-materializing
+      ;; transport metadata for each later blob-only read. During initial
+      ;; clone Git may have cached only origin, so the controlled server also
+      ;; permits lazy fetch from its fixed B2 object helper.
       (json-write! (client-base-path gd (:url ep))
                    {"remote" (:url ep) "head" (:head state) "manifest" (:manifest-cid state)
                     "objects" (get (:manifest state) "objects") "refs" (get (:manifest state) "refs")})
@@ -420,6 +421,11 @@
   (let [ep (endpoint url) e (js/Object.assign #js {} (.-env js/process))]
     (aset e "KOTOBA_GIT_CACHE" (private-dir! (path/join (cache-root) "mirrors")))
     (aset e "KOTOBA_GIT_ADAPTER" adapter)
+    ;; upload-pack normally disables lazy fetching from untrusted repos.
+    ;; This server is our private, verified, generated cache with a fixed
+    ;; object helper; allow it to hydrate a requested missing blob before
+    ;; validating the want. This affects only this helper process tree.
+    (aset (.-env js/process) "GIT_NO_LAZY_FETCH" "0")
     (with-remote-lock (:url ep) #(helper/main! [remote-name (:url ep)] e))))
 (defn object-main! [[_remote-name url]]
   (let [out! #(fs/writeSync 1 %) gd (path/resolve (or (env "GIT_DIR") "."))]

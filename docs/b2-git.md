@@ -122,6 +122,10 @@ It does not evict Git's own client object cache.
   blobs. These synthetic trees exist only in the disposable transport cache,
   never in the source manifest or B2 history. Clients use normal filtered-clone
   promisor packs and a direct OID/CID-verified missing-object helper.
+  The helper sets `GIT_NO_LAZY_FETCH=0` only in its process tree: upload-pack
+  serves our private generated cache, whose fixed B2 promisor helper verifies
+  each requested object. This also lets native initial clone hydrate blobs
+  before it reloads newly installed client promisor configuration.
 - Every publication contains a complete OID/CID inventory and ref projection.
   It binds the previous publication and one signed Nekko event per changed ref.
   Signature, owner, sequence, old target, parent and closure are checked.
