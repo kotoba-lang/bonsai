@@ -25,7 +25,7 @@
 (def zero-oid (apply str (repeat 40 "0")))
 (def ^:dynamic *quarantine* false)
 (defn env [k] (aget (.-env js/process) k))
-(defn buffer [b] (js/Buffer.from b))
+(defn buffer [b] (js/Buffer.from (if (sequential? b) (clj->js b) b)))
 (defn fail! [message data] (throw (ex-info message data)))
 (defn require! [ok message] (when-not ok (fail! message {})))
 (defn private-dir! [p]
@@ -157,7 +157,9 @@
   (require! (and (= 1 (get m "version")) (= (:rid ep) (get m "rid"))
                  (map? (get m "refs")) (map? (get m "objects"))) "Unsupported B2 manifest")
   (doseq [[ref oid] (get m "refs")]
-    (require! (and (or (str/starts-with? ref "refs/heads/") (str/starts-with? ref "refs/tags/"))
+    (require! (and (string? ref)
+                   (zero? (.-status (cp/spawnSync "git" (clj->js ["check-ref-format" ref]))))
+                   (or (str/starts-with? ref "refs/heads/") (str/starts-with? ref "refs/tags/"))
                    (oid? oid) (contains? (get m "objects") oid)
                    (or (not (str/starts-with? ref "refs/heads/")) (= "commit" (get-in m ["objects" oid "type"]))))
               "Invalid manifest ref"))
@@ -166,25 +168,57 @@
                    (contains? object/object-types (get entry "type"))
                    (nat-int? (get entry "size"))) "Invalid OID/CID manifest entry")) m)
 (declare object-bytes)
+(defn object-edges
+  "Read structural Git edges without decoding opaque names or commit messages
+   as UTF-8. Each edge carries its required target type; gitlinks are external."
+  [type body]
+  (let [b (buffer body)]
+    (case type
+      "tree"
+      (loop [offset 0 edges []]
+        (if (= offset (.-length b)) edges
+            (let [space (.indexOf b 32 offset) nul (.indexOf b 0 offset)]
+              (require! (and (<= offset space) (< space nul) (<= (+ nul 21) (.-length b)))
+                        "Truncated Git tree entry")
+              (let [mode (.toString b "latin1" offset space)
+                    name (.subarray b (inc space) nul)
+                    target (case mode "40000" "tree" "040000" "tree"
+                                 "100644" "blob" "100755" "blob" "120000" "blob"
+                                 "160000" "gitlink" nil)]
+                (require! (and target (pos? (.-length name)) (= -1 (.indexOf name 47))
+                               (not (contains? #{"." ".."} (.toString name "latin1"))))
+                          "Invalid Git tree entry")
+                (recur (+ nul 21) (if (= "gitlink" target) edges
+                                      (conj edges [(.toString b "hex" (inc nul) (+ nul 21)) target])))))))
+      ("commit" "tag")
+      (let [end (.indexOf b (js/Buffer.from "\n\n"))]
+        (require! (not (neg? end)) "Git metadata lacks a header/message separator")
+        (let [headers (str/split (.toString b "latin1" 0 end) #"\n")
+              values (fn [key] (map #(subs % (inc (count key)))
+                                    (filter #(str/starts-with? % (str key " ")) headers)))
+              single (fn [key] (let [vs (vec (values key))]
+                                 (require! (= 1 (count vs)) "Missing/duplicate Git metadata header") (first vs)))]
+          (if (= "commit" type)
+            (into [[(single "tree") "tree"]] (map #(vector % "commit") (values "parent")))
+            (let [target-type (single "type")]
+              (require! (contains? object/object-types target-type) "Invalid annotated tag type")
+              [[(single "object") target-type]]))))
+      [])))
 (defn closure-valid? [ep m]
   (let [objects (get m "objects")]
     (fetch-many! (str (:root ep) "/blocks") (path/join (cache-root) "blocks" (:rid ep))
                  (for [[_ e] objects :when (not= "blob" (get e "type"))] (get e "cid")))
-    (loop [todo (vec (vals (get m "refs"))) seen #{}]
+    (loop [todo (mapv #(vector % nil) (vals (get m "refs"))) seen #{}]
       (if (empty? todo) true
-          (let [oid (peek todo) todo (pop todo) entry (get objects oid)]
+          (let [[oid expected-type] (peek todo) todo (pop todo) entry (get objects oid)]
             (require! entry "Git closure contains an object absent from the manifest")
+            (require! (or (nil? expected-type) (= expected-type (get entry "type")))
+                      "Git closure target has the wrong object type")
             (if (or (seen oid) (= "blob" (get entry "type")))
               (recur todo (conj seen oid))
               (let [{:keys [type body]} (object-bytes ep oid entry)
-                    children (case type
-                               "commit" (let [c (codec/decode-commit body)] (into [(:tree c)] (:parents c)))
-                               "tree" (mapv :oid (remove #(= "160000" (:mode %)) (codec/decode-tree body)))
-                               "tag" (let [s (.toString (buffer body) "utf8")
-                                           target (second (re-find #"^object ([0-9a-f]{40})\n" s))]
-                                       (require! target "Invalid annotated tag") [target])
-                               [])]
-                (require! (every? oid? children) "Invalid Git closure edge")
+                    children (object-edges type body)]
+                (require! (every? #(oid? (first %)) children) "Invalid Git closure edge")
                 (recur (into todo children) (conj seen oid)))))))))
 (defn remote-state [ep]
   (let [owner (genesis-owner ep) chain (publications ep)
@@ -288,9 +322,11 @@
   (let [p (path/join gd "hooks/pre-receive")]
     (atomic! p (str "#!/bin/sh\nexec " (shell-quote adapter) " receive "
                      (shell-quote (:url ep)) " " (shell-quote gd) "\n"))
-    (fs/chmodSync p 448)))
+    (fs/chmodSync p 448)
+    ;; A user's global core.hooksPath must not bypass B2 durability before ACK.
+    (config! gd "core.hooksPath" (path/join gd "hooks"))))
 (defn configure-client! [ep state]
-  (when-let [client (env "GIT_DIR")]
+  (when-let [client (or (env "KOTOBA_B2_CLIENT_GIT_DIR") (env "GIT_DIR"))]
     (let [gd (path/resolve client) name (str "kotoba-b2-" (subs (helper/cache-key (:url ep)) 0 16))]
       (require! (.isDirectory (fs/statSync gd)) "Client Git control path is not a directory")
       (require! (not (.startsWith (fs/realpathSync gd) (str (get (:profile ep) "mount") "/")))
@@ -418,15 +454,26 @@
          (f)
          (finally (fs/closeSync fd) (fs/unlinkSync p)))))
 (defn remote-main! [[remote-name url] adapter]
-  (let [ep (endpoint url) e (js/Object.assign #js {} (.-env js/process))]
-    (aset e "KOTOBA_GIT_CACHE" (private-dir! (path/join (cache-root) "mirrors")))
-    (aset e "KOTOBA_GIT_ADAPTER" adapter)
-    ;; upload-pack normally disables lazy fetching from untrusted repos.
-    ;; This server is our private, verified, generated cache with a fixed
-    ;; object helper; allow it to hydrate a requested missing blob before
-    ;; validating the want. This affects only this helper process tree.
-    (aset (.-env js/process) "GIT_NO_LAZY_FETCH" "0")
-    (with-remote-lock (:url ep) #(helper/main! [remote-name (:url ep)] e))))
+  (let [ep (endpoint url)
+        client (env "GIT_DIR")
+        process-env (.-env js/process)]
+    ;; Client command-line configuration and Git object/worktree environment
+    ;; belong to the client, never to our generated upload/receive repository.
+    (if client (aset process-env "KOTOBA_B2_CLIENT_GIT_DIR" (path/resolve client))
+        (js-delete process-env "KOTOBA_B2_CLIENT_GIT_DIR"))
+    (doseq [k ["GIT_DIR" "GIT_WORK_TREE" "GIT_COMMON_DIR" "GIT_INDEX_FILE"
+               "GIT_OBJECT_DIRECTORY" "GIT_ALTERNATE_OBJECT_DIRECTORIES" "GIT_QUARANTINE_PATH"
+               "GIT_CONFIG_PARAMETERS" "GIT_CONFIG_COUNT"]]
+      (js-delete process-env k))
+    (let [e (js/Object.assign #js {} process-env)]
+      (aset e "KOTOBA_GIT_CACHE" (private-dir! (path/join (cache-root) "mirrors")))
+      (aset e "KOTOBA_GIT_ADAPTER" adapter)
+      ;; upload-pack normally disables lazy fetching from untrusted repos.
+      ;; This server is our private, verified, generated cache with a fixed
+      ;; object helper; allow it to hydrate a requested missing blob before
+      ;; validating the want. This affects only this helper process tree.
+      (aset process-env "GIT_NO_LAZY_FETCH" "0")
+      (with-remote-lock (:url ep) #(helper/main! [remote-name (:url ep)] e)))))
 (defn object-main! [[_remote-name url]]
   (let [out! #(fs/writeSync 1 %) gd (path/resolve (or (env "GIT_DIR") "."))]
     (loop [requests []]

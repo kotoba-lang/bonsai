@@ -10,7 +10,9 @@ qualification is implied.
 
 Install `bin/git-kotoba-b2`, `bin/git-remote-kotoba-b2`,
 `bin/git-remote-kotoba-b2-object` and `bin/kotoba-b2-git-adapter` on PATH as
-symlinks to this checkout. Keep the checkout available: kbb resolves its pinned
+symlinks to a retained checkout or a release directory exported with `git archive`
+from the merged commit. Preserve `deps.edn`, `src/` and `bin/` together. Keep that
+directory available: kbb resolves its pinned
 dependencies from the executable's real path. The existing
 `git-remote-kotoba` installation is independent and need not change.
 
@@ -62,6 +64,9 @@ Publication occurs in a pre-receive hook and completes its B2 readback before
 native Git acknowledges success. A failed upload rejects the push. A connection
 or local ref failure after durable publication can still leave a successful B2
 publication with a failed client acknowledgement; fetch to discover the result.
+The private transport repository pins its own `core.hooksPath`. Client `git -c`
+configuration and object/worktree environment are cleared before running its
+Git services, so client/global hook selection cannot bypass B2 publication.
 
 Create another working directory using:
 
@@ -129,6 +134,8 @@ It does not evict Git's own client object cache.
 - Every publication contains a complete OID/CID inventory and ref projection.
   It binds the previous publication and one signed Nekko event per changed ref.
   Signature, owner, sequence, old target, parent and closure are checked.
+  Closure edges enforce commit/tree/blob/tag target types. Tree names and
+  commit messages remain opaque bytes, including non-UTF-8 names/messages.
 - Small persistent observed-head receipts refuse removal/rollback of history
   this installation has already verified. These remain with the signing state
   when disposable transport caches are evicted.
@@ -155,3 +162,13 @@ It does not evict Git's own client object cache.
 
 The release's concrete command/readback evidence is recorded separately from
 source implementation and any future GitHub merge/publication.
+
+## Regression checks
+
+Run `kbb -M:b2-test` from the repository root. It uses native Git and an isolated
+local rclone protocol stub; it requires no B2 account, credentials or mount.
+It covers hook overrides, durable push/ref deletion/recreation, failed uploads,
+cold filtered clone, missing historical blobs, single-file restore, diff and
+fsck, plus corrupt CIDs and invalid closure types. Live B2/VFS eviction remains
+a separate operational check against the configured Mac mount. Local eviction
+tests verify dirty-file refusal and retention of client history and signing state.

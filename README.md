@@ -24,7 +24,9 @@ existing Git transport bridge, Bonsai object codecs and Nekko signed ref events.
 
 - **`bonsai.repo`** — `empty-repo` (a fresh `arrangement` db) and
   `persist!` (snapshot the *whole* repo — objects and refs together — to
-  durable storage via `arrangement.core/commit!`). A repo is one db;
+  durable storage via `arrangement.core/commit!`), and `repo/restore`
+  (materializes the complete persisted db, distinct from B2 lazy retrieval).
+  A repo is one db;
   object subjects are content hashes, ref subjects are repo ids —
   disjoint namespaces, so both coexist without collision.
 - **`bonsai.object`** — `write-blob`/`read-blob` (raw, 0x55 codec),
@@ -193,10 +195,6 @@ events, and acknowledge only after bundle and ref state are durably readable.
   (ADR-2607022600 flags "Datalog fixpoint" as a follow-up) — `ancestors`/
   `log`/`missing-since` still walk the DAG by hand rather than expressing
   reachability as one Datalog query.
-- **Whole-db restore is available.** `repo/restore` wraps
-  `arrangement.core/restore` to recover objects and refs from a persisted
-  snapshot CID. This materializes the complete db; it is distinct from the
-  B2 Git adapter's filtered-clone and lazy blob retrieval.
 
 ## Private Git on kotobase.net
 
